@@ -32,8 +32,38 @@ const PAINT := {
 	"post": Color(0.30, 0.22, 0.14),
 }
 
+## Standing crop. Each sprite is a CLUMP of stalks, not one stalk, which is what lets the
+## density stay affordable while the field still reads as full.
+const CROP_BLOCK := 16.0            # world units per culling block
+const CROP_PER_SQUARE_METRE := 1.2
+## Blocks past this are dropped whole. The ground underneath is already a crop texture
+## with furrows, so a distant field still reads as a field — it just stops having stalks.
+##
+## Note this is a weak lever: culling 46 -> 30 bought 1ms and then hit a floor, because
+## the cost is fill from NEAR sprites, which are never culled. Density is the real knob.
+const CROP_CULL := 34.0
+const CROP_FADE := 6.0
+
+## The authored wheat art. Four variants, mixed through the field.
+const CROP_SPRITES := [
+	"res://sprites/wheat_plant_1.png",
+	"res://sprites/wheat_plant_2.png",
+	"res://sprites/wheat_plant_3.png",
+	"res://sprites/wheat_plant_4.png",
+]
+## Pixels per world metre for the sprites. The tallest plant (318px) becomes a 1.5m
+## stand of wheat, and the others keep their true proportions against it.
+const CROP_PIXELS_PER_METRE := 212.0
+## Sunlight baked into the sprites, since a billboard cannot be lit (see below). The lit
+## crop ground measures (71,75,37) at its brightest and standing crop wants to sit just
+## above that; at 1.0 the art renders around (213,180,28) — a neon field.
+const CROP_LIGHT := Color(0.62, 0.62, 0.62)
+
 var _terrain: TerrainManager
 var _material: StandardMaterial3D
+## One quad per sprite variant, each sized to its own art so the plants keep their
+## real proportions instead of all being stretched into the same rectangle.
+var _crop_meshes: Array[QuadMesh] = []
 var _rng := RandomNumberGenerator.new()
 
 # Scratch for mesh building, member-held for the same copy-on-write reason as the terrain.
@@ -48,6 +78,43 @@ func _ready() -> void:
 	_material.roughness = 1.0
 	_material.metallic = 0.0
 
+	for path: String in CROP_SPRITES:
+		var tex: Texture2D = load(path)
+		var mesh := QuadMesh.new()
+		mesh.size = Vector2(tex.get_width(), tex.get_height()) / CROP_PIXELS_PER_METRE
+		# Pivot at the base: the art has roots at the bottom, so it should stand on the
+		# ground rather than be centred in it.
+		mesh.center_offset = Vector3(0.0, mesh.size.y * 0.5, 0.0)
+
+		var mat := StandardMaterial3D.new()
+		mat.albedo_texture = tex
+		# Bakes the sunlight in. See CROP_LIGHT and the UNSHADED note below.
+		mat.albedo_color = CROP_LIGHT
+		# Y-billboard: the plant turns to face the camera but stays standing. A full
+		# billboard would lie it over as you look down.
+		mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+		# Without this, billboarding discards the per-instance scale and every plant in
+		# the field comes out exactly the same height.
+		mat.billboard_keep_scale = true
+		# Scissor, not blend: blending tens of thousands of quads would need per-instance
+		# depth sorting, and it is the expensive path on a tiled GPU. A hard cutout also
+		# suits a game that quantises to 512 colours.
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		mat.alpha_scissor_threshold = 0.5
+		mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mat.roughness = 1.0
+		# UNSHADED, with the sun baked into albedo_color instead.
+		#
+		# A billboard cannot be lit correctly: its normal is whatever direction the
+		# camera is, so it catches the sun head-on while the ground it stands in does
+		# not. Lit, the crop measured 5.2x the brightness of the ground underneath it —
+		# neon yellow in a dark field, with the cull boundary drawn across it in
+		# fluorescent marker. The sun does not move here, so baking is free.
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mesh.material = mat
+		_crop_meshes.append(mesh)
+
 
 ## Rebuilds the whole farm from a plan. Safe to call repeatedly — this is what live
 ## reload does, and it is why nothing here is allowed to touch the height field.
@@ -60,7 +127,7 @@ func rebuild(plan: FarmPlan, terrain: TerrainManager) -> Dictionary:
 		remove_child(child)
 		child.queue_free()
 
-	var stats := {"structures": 0, "fences": 0, "animals": 0, "draws": 0}
+	var stats := {"structures": 0, "fences": 0, "animals": 0, "crop_blocks": 0, "draws": 0}
 	if not plan.loaded:
 		return stats
 
@@ -77,6 +144,10 @@ func rebuild(plan: FarmPlan, terrain: TerrainManager) -> Dictionary:
 		if bool(z.get("fenced", false)):
 			if _add_fence(plan, zone_id):
 				stats.fences += 1
+		# A "crop" zone grows standing crop, from the ground type alone — the designer
+		# does not have to also remember to tick something.
+		if String(z.get("ground", "")) == "crop":
+			stats.crop_blocks += _add_crop(plan, zone_id)
 		var species := String(z.get("contents", "none"))
 		var count := int(z.get("count", 0))
 		if species != "none" and count > 0:
@@ -239,15 +310,77 @@ func _add_animals(plan: FarmPlan, zone_id: int, species: String, count: int) -> 
 		var node := packed.instantiate() as Node3D
 		node.position = Vector3(at.x, _terrain.height_at(at.x, at.y), at.y)
 		node.rotation.y = _rng.randf_range(0.0, TAU)
+		# The imported .glb root is a plain Node3D, so the behaviour script goes on it
+		# directly — no wrapper node, no extra transform to keep in sync.
+		node.set_script(load("res://scripts/farm_animal.gd"))
 		add_child(node)
-		# Stagger the idle so a pen of cows is not a chorus line.
-		var anim := node.find_child("AnimationPlayer", true, false) as AnimationPlayer
-		if anim and anim.get_animation_list().size() > 0:
-			var clip: String = anim.get_animation_list()[0]
-			anim.play(clip)
-			anim.seek(_rng.randf() * anim.get_animation(clip).length, true)
+		(node as FarmAnimal).setup(StringName(species), cells, _terrain, _rng.randi(), _terrain.player)
 		placed += 1
 	return placed
+
+
+# ---- standing crop ----------------------------------------------------------
+
+## Scatters standing crop over a zone, as one MultiMesh per CROP_BLOCK-sized tile.
+##
+## Blocks rather than one giant MultiMesh: Godot culls per GeometryInstance3D, so a
+## single field-wide MultiMesh is all-or-nothing and would draw every stalk in the field
+## whenever any part of it is on screen. Per block, visibility_range_end drops distant
+## tiles wholesale, which is the only reason the density is affordable.
+func _add_crop(plan: FarmPlan, zone_id: int) -> int:
+	var cells := plan.zone_cells(zone_id)
+	if cells.is_empty():
+		return 0
+
+	# Dictionary of Array (not PackedVector2Array): packed arrays are copy-on-write, so
+	# appending through a dictionary lookup would scribble on a temporary.
+	var blocks := {}
+	for c in cells:
+		var key := Vector2i(floori(c.x / CROP_BLOCK), floori(c.y / CROP_BLOCK))
+		if not blocks.has(key):
+			blocks[key] = []
+		blocks[key].append(c)
+
+	var cell_area: float = FarmPlan.CELL_SIZE * FarmPlan.CELL_SIZE
+	var made := 0
+	for key: Vector2i in blocks:
+		var block: Array = blocks[key]
+		var count := int(block.size() * cell_area * CROP_PER_SQUARE_METRE)
+		if count <= 0:
+			continue
+		# One MultiMesh per variant per block. A MultiMesh carries a single mesh, so
+		# mixing the four sprites means four of them; they share the block's culling, so
+		# a distant block still drops all four at once.
+		for variant in _crop_meshes.size():
+			made += _crop_block(block, _crop_meshes[variant], count / _crop_meshes.size())
+	return made
+
+
+func _crop_block(block: Array, mesh: QuadMesh, count: int) -> int:
+		if count <= 0:
+			return 0
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = mesh
+		mm.instance_count = count
+		for i in count:
+			var at: Vector2 = block[_rng.randi_range(0, block.size() - 1)]
+			at += Vector2(_rng.randf_range(-1.0, 1.0), _rng.randf_range(-1.0, 1.0))
+			var xf := Transform3D()
+			xf = xf.scaled(Vector3.ONE * _rng.randf_range(0.75, 1.3))
+			# Sunk slightly, so the roots meet the soil instead of hovering on it.
+			xf.origin = Vector3(at.x, _terrain.height_at(at.x, at.y) - 0.06, at.y)
+			mm.set_instance_transform(i, xf)
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.visibility_range_end = CROP_CULL
+		mmi.visibility_range_end_margin = CROP_FADE
+		# No fade: dithered fade costs a transparency pass, and at this distance the
+		# stalks are a couple of pixels tall — popping is invisible under the dither.
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_DISABLED
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mmi)
+		return 1
 
 
 # ---- mesh scratch -----------------------------------------------------------

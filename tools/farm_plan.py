@@ -195,10 +195,11 @@ def default_plan() -> FarmPlan:
     plan = FarmPlan()
     plan.zones = [
         Zone(1, "Yard", ground="dirt"),
-        Zone(2, "Cow Pen", ground="dirt", contents="cow", count=6, fenced=True),
-        Zone(3, "Horse Paddock", ground="pasture", contents="horse", count=3, fenced=True),
+        Zone(2, "Cow Pen", ground="dirt", contents="cow", count=30, fenced=True),
+        Zone(3, "Horse Paddock", ground="pasture", contents="horse", count=22, fenced=True),
         Zone(4, "Main Road", ground="road"),
         Zone(5, "Wheat Field", ground="crop"),
+        Zone(6, "West Pasture", ground="pasture", contents="cow", count=24, fenced=True),
     ]
 
     def rect(zone_id: int, x0: float, z0: float, x1: float, z1: float) -> None:
@@ -211,6 +212,7 @@ def default_plan() -> FarmPlan:
     rect(2, 66, -40, 130, 10)      # cow pen
     rect(3, -120, -60, -12, 40)    # horse paddock west of the road
     rect(5, 6, 40, 120, 150)       # wheat field
+    rect(6, -230, 60, -30, 210)    # big grazing pasture, south-west
     plan.structures = [
         Structure("barn", 30.0, -20.0, 0.0),
         Structure("silo", 52.0, -30.0, 0.0),

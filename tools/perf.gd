@@ -25,6 +25,7 @@ func _ready() -> void:
 	# The view that actually matters: standing on the farm, looking out at the hills.
 	await _pass("farm, eye height, static", Vector3.ZERO, 2.0, false)
 	await _pass("farm, eye height, walking", Vector3.ZERO, 2.0, true)
+	await _pass("standing in the wheat", Vector3(60.0, 0.0, 95.0), 1.7, false)
 	await _pass("elevated +40, static", Vector3.ZERO, 40.0, false)
 
 	get_tree().quit()

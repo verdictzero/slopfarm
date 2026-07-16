@@ -37,7 +37,8 @@ rewriting 65k integers.
 |---|---|
 | **Zones** | Cells store a zone *id*; zones carry the meaning (ground, contents, fenced). Retyping a zone repaints every cell that belongs to it. Zone 0 = "not authored". |
 | **Ground** | `pasture`, `dirt`, `road`, `crop` — indices into the ground texture array. |
-| **Contents** | `cow` / `horse` + a count, scattered over that zone's cells (not its bounding box, so an L-shaped pen doesn't put a cow in the notch). |
+| **Contents** | `cow` / `horse` + a count, scattered over that zone's cells (not its bounding box, so an L-shaped pen doesn't put a cow in the notch). They walk: wander to a spot in their zone, amble there, stand a while, repeat. |
+| **Standing crop** | A `crop` zone grows wheat automatically from `sprites/wheat_plant_*.png` — four variants, Y-billboarded, one MultiMesh per variant per 16 m block, culled per block by distance. |
 | **Fenced** | Derived, not drawn: a post-and-rail fence is generated along every cell edge where the zone meets something else, merged to one mesh per zone. |
 | **Structures** | Points with a yaw: barn, shed, silo, coop, trough, haystack, well. Procedural geometry — there is no building art. One merged mesh each, so one draw call each, and a trimesh body off that same mesh so you can't walk through them. |
 
@@ -67,7 +68,35 @@ Load-bearing decisions:
   2.90 / 11.42 / **52.21** ms at 3× / 6× / 12× — so it degrades exactly as you zoom in to
   place a fence. Qt hands scaling to the blitter, so pan and zoom stay flat.
 
-The animals were unusable as shipped and are fixed at import, not in code:
+### Animals and crop, and what they cost
+
+Everything about the walk is measured off the one clip the models ship with
+(`Armature|Unreal Take|baselayer`, 1.0 s), because nothing documents it:
+
+- It's a **walk**, not an idle — the leg joints swing 170–180° through the cycle.
+- It has **no root motion**, so the script moves the node and the clip does the legs.
+- It **doesn't loop** as imported (`LOOP_NONE`). Left alone it plays once and freezes
+  mid-stride, which is what the farm shipped doing.
+- **Stride is 0.53 m/cycle (cow) and 0.91 m (horse)**, measured as the fore-aft excursion
+  of the feet in world space. Walking faster than stride/cycle *is* moonwalking, so speed
+  and playback rate are derived from each other, never picked separately.
+- There's no idle pose, so **standing** means holding the frame where all four feet are
+  down: t=0.200 (cow), t=0.183 (horse).
+
+**An animating skeleton is the most expensive thing on the farm** — ~0.15 ms each. 76 of
+them measured 18.06 ms/frame against 12.50 ms for 38, while the entire wheat field cost
+less. (An earlier measurement found animals free; that was taken while the `LOOP_NONE`
+bug had them frozen, so nothing was skinning.) Both are distance-culled: animals go
+dormant past 55 m, crop blocks are dropped past 34 m. That's worth ~5.4 ms and is what
+lets 76 animals and a full-density field coexist.
+
+Counter-intuitively, **crop density matters and crop cull distance barely does**: the cost
+is fill from *near* sprites, which are never culled. Culling 46→30 m bought 1 ms and then
+hit a floor; halving density bought 4 ms. Crop is unshaded with the sun baked in, because
+a billboard's normal faces the camera — lit, the stalks measured 5.2× the brightness of
+the ground they stand in, i.e. neon yellow in a dark field.
+
+The animals were also unusable as shipped and are fixed at import, not in code:
 `nodes/root_scale` (cow 90, horse 190 — they are authored at different scales, so there is
 no one number; measured against a 1.5 m reference post) and `process/size_limit=256` on
 their textures. Those textures are 4096² and 8192², which cost **53 MB of VRAM** in a game

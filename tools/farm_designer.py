@@ -317,7 +317,7 @@ class Designer(QMainWindow):
         self.f_ground.currentTextChanged.connect(self._zone_edited)
         self.f_contents = QComboBox(); self.f_contents.addItems(CONTENTS)
         self.f_contents.currentTextChanged.connect(self._zone_edited)
-        self.f_count = QSpinBox(); self.f_count.setRange(0, 60)
+        self.f_count = QSpinBox(); self.f_count.setRange(0, 250)
         self.f_count.valueChanged.connect(self._zone_edited)
         self.f_fenced = QCheckBox("Fenced"); self.f_fenced.stateChanged.connect(self._zone_edited)
         form.addRow("Name", self.f_name)

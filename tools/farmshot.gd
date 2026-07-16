@@ -1,6 +1,5 @@
 extends Node
-## Screenshots of the authored farm. Run:
-##   godot-4 --path . tools/farmshot.tscn
+## Screenshots of the authored farm. Run:  godot-4 --path . tools/farmshot.tscn
 const SHOT_DIR := "res://.shots"
 @onready var main: Node3D = $Main
 func _ready() -> void:
@@ -11,13 +10,12 @@ func _ready() -> void:
 	player.set_physics_process(false)
 	player.set_process_unhandled_input(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-
 	var views := [
 		["farm_air", Vector3(20, 150, 90), Vector3(30, 0, -10)],
 		["farm_yard", Vector3(-4, 6, 34), Vector3(34, 2, -18)],
 		["farm_pen", Vector3(60, 5, 14), Vector3(100, 1, -18)],
-		["farm_road", Vector3(0, 4, 90), Vector3(0, 1, -60)],
-		["farm_crop", Vector3(20, 8, 20), Vector3(70, 0, 110)],
+		["farm_crop_in", Vector3(50, 1.7, 80), Vector3(90, 1.2, 130)],
+		["farm_crop_edge", Vector3(20, 3.0, 34), Vector3(70, 0.5, 110)],
 	]
 	for v in views:
 		var eye: Vector3 = v[1]
