@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://tools/perf.gd" id="1_perf"]
+[ext_resource type="PackedScene" path="res://main.tscn" id="2_main"]
+
+[node name="Perf" type="Node"]
+script = ExtResource("1_perf")
+
+[node name="Main" parent="." instance=ExtResource("2_main")]

@@ -1,0 +1,37 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/terrain_manager.gd" id="2_terr"]
+[ext_resource type="Shader" path="res://shaders/dither_lut.gdshader" id="3_dither"]
+[ext_resource type="Texture2D" path="res://shaders/lut_512.png" id="4_lut"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_dither"]
+shader = ExtResource("3_dither")
+shader_parameter/dither_strength = 0.09
+shader_parameter/pixel_size = 1.0
+shader_parameter/lut_tex = ExtResource("4_lut")
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+
+[node name="TerrainManager" type="Node3D" parent="."]
+script = ExtResource("2_terr")
+
+[node name="PostProcess" type="CanvasLayer" parent="."]
+layer = 100
+
+[node name="BackBufferCopy" type="BackBufferCopy" parent="PostProcess"]
+copy_mode = 2
+
+[node name="Dither" type="ColorRect" parent="PostProcess"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+material = SubResource("ShaderMaterial_dither")

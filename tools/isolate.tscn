@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://tools/isolate.gd" id="1_iso"]
+[ext_resource type="PackedScene" path="res://main.tscn" id="2_main"]
+
+[node name="Isolate" type="Node"]
+script = ExtResource("1_iso")
+
+[node name="Main" parent="." instance=ExtResource("2_main")]

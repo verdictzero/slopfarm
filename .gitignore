@@ -1,0 +1,22 @@
+# Godot 4+ specific ignores
+.godot/
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono/.NET specific ignores
+.mono/
+data_*/
+mono_crash.*.json
+
+# System/editor files
+.DS_Store
+
+# Screenshots from tools/shot.tscn
+.shots/
+
+# Python bytecode from tools/
+__pycache__/
+
+# Atomic-save temp from the farm designer
+*.json.tmp
