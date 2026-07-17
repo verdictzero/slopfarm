@@ -100,8 +100,8 @@ const BAND_CORAL := Color(0.72, 0.34, 0.27)
 const BAND_TEAL := Color(0.24, 0.50, 0.50)
 const BAND_AMBER := Color(0.74, 0.55, 0.22)
 const TALLOW := Color(0.80, 0.74, 0.42)
-const BLOOD := Color(0.42, 0.05, 0.05)
-const GORE := Color(0.55, 0.12, 0.12)
+const BLOOD := Color(0.72, 0.07, 0.06)
+const GORE := Color(0.62, 0.11, 0.08)
 
 var _terrain: TerrainManager
 var _player: Node3D
@@ -982,12 +982,12 @@ func _belt(from: Vector3, to: Vector3) -> void:
 func _build_gore() -> void:
 	var mouth: Vector3 = (_machines[0]["center"] as Vector3) + Vector3(0, 4.6, 0)
 
-	# Fine blood spray — lots of small bright particles, arcing out and falling.
+	# Fine blood spray — lots of small bright red particles, fountaining out and falling.
 	var spray := CPUParticles3D.new()
 	spray.position = mouth
-	spray.amount = 260
+	spray.amount = 320
 	spray.lifetime = 1.6
-	spray.mesh = _gore_particle_mesh(0.09, BLOOD.lightened(0.05))
+	spray.mesh = _gore_particle_mesh(0.10, BLOOD)
 	spray.material_override = _particle_mat()
 	spray.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 	spray.emission_sphere_radius = 1.1
@@ -995,19 +995,19 @@ func _build_gore() -> void:
 	spray.spread = 55.0
 	spray.gravity = Vector3(0, -12.0, 0)
 	spray.initial_velocity_min = 3.0
-	spray.initial_velocity_max = 8.0
+	spray.initial_velocity_max = 8.5
 	spray.scale_amount_min = 0.6
-	spray.scale_amount_max = 1.6
-	spray.color = GORE
-	_apply_gore_ramp(spray, BLOOD)
+	spray.scale_amount_max = 1.7
+	spray.color = Color.WHITE
+	_apply_gore_ramp(spray)
 	add_child(spray)
 
-	# Coarser gore chunks — fewer, bigger, darker, tumbling.
+	# Coarser gore chunks — fewer, bigger, tumbling, still bloody.
 	var chunks := CPUParticles3D.new()
 	chunks.position = mouth
-	chunks.amount = 90
+	chunks.amount = 120
 	chunks.lifetime = 2.0
-	chunks.mesh = _gore_particle_mesh(0.22, GORE.darkened(0.15))
+	chunks.mesh = _gore_particle_mesh(0.24, GORE)
 	chunks.material_override = _particle_mat()
 	chunks.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 	chunks.emission_sphere_radius = 0.9
@@ -1015,28 +1015,28 @@ func _build_gore() -> void:
 	chunks.spread = 42.0
 	chunks.gravity = Vector3(0, -14.0, 0)
 	chunks.initial_velocity_min = 2.0
-	chunks.initial_velocity_max = 6.0
+	chunks.initial_velocity_max = 6.5
 	chunks.angular_velocity_min = -360.0
 	chunks.angular_velocity_max = 360.0
 	chunks.scale_amount_min = 0.7
-	chunks.scale_amount_max = 2.0
-	chunks.color = GORE.darkened(0.1)
-	_apply_gore_ramp(chunks, GORE.darkened(0.2))
+	chunks.scale_amount_max = 2.2
+	chunks.color = Color.WHITE
+	_apply_gore_ramp(chunks)
 	add_child(chunks)
 
-	# A slow, constant drip down the grinder throat onto the belt.
+	# A slow, constant drip of blood down the grinder throat onto the belt.
 	var drip := CPUParticles3D.new()
 	drip.position = _machines[0]["center"] + Vector3(0, 1.4, 0)
-	drip.amount = 40
+	drip.amount = 50
 	drip.lifetime = 1.4
-	drip.mesh = _gore_particle_mesh(0.07, BLOOD)
+	drip.mesh = _gore_particle_mesh(0.08, BLOOD)
 	drip.material_override = _particle_mat()
 	drip.direction = Vector3(0, -1, 0)
 	drip.spread = 12.0
 	drip.gravity = Vector3(0, -16.0, 0)
 	drip.initial_velocity_min = 0.5
 	drip.initial_velocity_max = 1.5
-	drip.color = BLOOD
+	drip.color = Color.WHITE
 	add_child(drip)
 
 
@@ -1055,11 +1055,13 @@ func _particle_mat() -> StandardMaterial3D:
 	return m
 
 
-func _apply_gore_ramp(p: CPUParticles3D, base: Color) -> void:
+## A near-white lifetime ramp that only lightly darkens toward the end, so it multiplies the
+## particle mesh's own bright red without dragging it to black — the gore stays bloody, not sooty.
+func _apply_gore_ramp(p: CPUParticles3D) -> void:
 	var ramp := Gradient.new()
-	ramp.set_color(0, base.lightened(0.1))
-	ramp.set_color(1, base.darkened(0.4))
-	ramp.add_point(0.7, base)
+	ramp.set_color(0, Color(1.0, 0.96, 0.96))
+	ramp.set_color(1, Color(0.72, 0.5, 0.5))
+	ramp.add_point(0.65, Color(0.95, 0.8, 0.8))
 	p.color_ramp = ramp
 
 
