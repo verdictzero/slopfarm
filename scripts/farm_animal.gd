@@ -25,7 +25,10 @@ const STRIDE := {&"horse": 0.91}
 ## model space, so this multiplies into STRIDE: a 2x horse whose feet still only claim
 ## 0.91m a cycle skates. Speed follows stride, so a bigger animal also covers ground
 ## faster, which is what long legs do.
-const SCALE := {&"horse": 2.0}
+## Halved from 2.0 to 1.0 to make the herd 50% smaller — because stride, speed and the
+## ragdoll's collision box all derive from this, the whole animal shrinks consistently
+## (feet stay locked, the knocked-out body stays sized to the mesh) with the one edit.
+const SCALE := {&"horse": 1.0}
 ## The frame where all four feet are planted — the only pose worth stopping on.
 const STAND_FRAME := {&"horse": 0.183}
 
@@ -34,9 +37,9 @@ const ROAM_RANGE := 14.0
 const TURN_RATE := 1.6          # radians/sec — a horse does not pivot on the spot
 const ARRIVED := 1.2
 
-## Hits it takes before it drops. A few, so knocking one out is a deliberate act rather
-## than a stray swing, and so a flinch reaction has room to read before the collapse.
-const HIT_POINTS := 3
+## Hits it takes before it drops. One: a single bop drops the animal straight into its
+## floppy ragdoll, so knocking a cow over is immediate rather than a three-swing chore.
+const HIT_POINTS := 1
 ## How hard the knockout throws the ragdoll away from the blow, and the lift on it — enough
 ## that it visibly flops rather than just tipping where it stood.
 const KNOCK_FORCE := 6.5
