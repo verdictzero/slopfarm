@@ -16,6 +16,10 @@ const PLAN_POLL_SECONDS := 1.0
 var _farm: FarmBuilder
 var _factory: GlueFactory
 var _terrain_grass: TerrainGrass
+var _trees: TreeScatter
+var _roads: CountryRoads
+var _towns: TownBuilder
+var _truck: Truck
 var _plan_modified_at: int = 0
 var _plan_poll: float = 0.0
 
@@ -53,6 +57,25 @@ func _ready() -> void:
 	add_child(_factory)
 	_factory.setup(terrain, player)
 
+	# The winding country roads out to the towns, and the towns themselves — hazy silhouettes on
+	# the horizon that the player carts glue to and sells. Built once; they do not depend on the
+	# plan, and they own their own ground (trees and roads keep clear of the towns).
+	_roads = CountryRoads.new()
+	_roads.name = "CountryRoads"
+	add_child(_roads)
+	_roads.setup(terrain)
+
+	_towns = TownBuilder.new()
+	_towns.name = "Towns"
+	add_child(_towns)
+	_towns.setup(terrain)
+
+	# The delivery truck, parked on the apron just outside the works.
+	_truck = Truck.new()
+	_truck.name = "Truck"
+	add_child(_truck)
+	_truck.setup(terrain, Vector3(150.0, 0.0, 5.0), 0.0)
+
 	# Wild grass over the terrain's own grassland, everywhere the farm plan did not author.
 	# Created before the plan loads; _load_farm_plan hands it each new plan so it re-sows
 	# around whatever the designer painted.
@@ -61,6 +84,14 @@ func _ready() -> void:
 	add_child(_terrain_grass)
 	_terrain_grass.setup(terrain, player)
 	_terrain_grass.add_exclusion(_factory.footprint())
+
+	# Groves of trees scattered naturally across the countryside, streamed around the player like
+	# the grass. Kept off the factory slab, the roads and the towns.
+	_trees = TreeScatter.new()
+	_trees.name = "TreeScatter"
+	add_child(_trees)
+	_trees.setup(terrain, player)
+	_trees.add_exclusion(_factory.footprint())
 
 	_load_farm_plan()
 
@@ -86,6 +117,8 @@ func _load_farm_plan() -> void:
 	terrain.apply_farm_plan(plan)
 	if _terrain_grass != null:
 		_terrain_grass.set_plan(plan)
+	if _trees != null:
+		_trees.set_plan(plan)
 	var stats := _farm.rebuild(plan, terrain)
 	print("farm plan: %s | %d structures, %d fences, %d animals, %d crop blocks, %d grass blocks, %d nodes" % [
 		"loaded" if plan.loaded else plan.error,

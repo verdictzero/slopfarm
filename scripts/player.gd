@@ -24,9 +24,11 @@ const HIT_CONE := 0.5
 ## You grab what the crosshair is on, Half-Life style, not merely the nearest body.
 const PICKUP_REACH := 4.0
 const PICKUP_CONE := 0.55
-## Where a carried cow floats relative to the camera (in front, a touch low).
-const CARRY_DISTANCE := 2.2
-const CARRY_DROP := 0.6
+## Where a carried cow floats relative to the camera. Held well out ahead and slung low so
+## the long body clears the crosshair, and turned side-on (see _drive_carried) so it lies
+## across the view rather than pointing down it — you can see past it while you carry it.
+const CARRY_DISTANCE := 3.8
+const CARRY_DROP := 1.15
 ## Half-Life carry, all as velocities the player writes onto the held RigidBody each frame:
 ## STIFFNESS pulls it to the hold point (capped by MAX_SPEED so it never rockets), and TURN
 ## rights it to face forward (capped by TURN_MAX). It stays dynamic throughout, so it keeps
@@ -40,6 +42,13 @@ const DROP_SPEED := 1.5
 const THROW_SPEED := 12.0
 ## Swing duration, seconds.
 const SWING_TIME := 0.28
+
+## Glue trade. How near the factory dock you load finished sacks, how near a town market you
+## sell them, how much each sack fetches, and how near the truck you have to be to climb in.
+const COLLECT_RADIUS := 8.0
+const SELL_RADIUS := 8.0
+const TRUCK_ENTER_RADIUS := 5.5
+const GLUE_PRICE := 12
 
 const WAND_SCENE := "res://models/heart_wand.glb"
 ## Resting pose of the wand in the camera's corner, and the height it is fitted to. The wand is
@@ -63,6 +72,18 @@ var _pitch: float = 0.0
 var _wand: Node3D
 var _swing: float = 0.0
 var _carried: HorseRagdoll
+
+## The glue economy: sacks currently carried and money earned. The truck the player is driving,
+## if any (while set, movement is handed to it and the player rides along as the streaming
+## anchor so terrain, grass and trees keep building around the truck).
+var glue: int = 0
+var money: int = 0
+var _driving: Truck
+
+## HUD.
+var _money_label: Label
+var _glue_label: Label
+var _prompt_label: Label
 
 ## Where R sends the player, and the terrain to rebuild solid ground around it on the way.
 ## Both are set by main.gd once the world exists; safe to leave unset (R just no-ops).
@@ -114,8 +135,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
 		if button.button_index == MOUSE_BUTTON_LEFT:
-			# Left click swings the wand — or, when you are carrying a cow, punts it.
-			if _carried != null and is_instance_valid(_carried):
+			# Left click swings the wand — or, when carrying a cow, punts it. Idle behind the wheel.
+			if _driving != null:
+				pass
+			elif _carried != null and is_instance_valid(_carried):
 				_throw()
 			else:
 				_attack()
@@ -125,6 +148,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key := (event as InputEventKey).physical_keycode
 		if key == KEY_E:
 			_interact()
+		elif key == KEY_F:
+			# Climb into the nearest truck, or step out of the one you are driving.
+			_toggle_truck()
 		elif key == KEY_R:
 			# The failsafe: warp back to the start if you ever get wedged in the scenery.
 			_respawn()
@@ -139,9 +165,54 @@ func _process(delta: float) -> void:
 			_wand.rotation_degrees = WAND_REST_ROT + Vector3(SWING_PITCH * arc, 0.0, 0.0)
 		else:
 			_wand.rotation_degrees = WAND_REST_ROT
+	_update_hud()
+
+
+## Refreshes the money/glue readout and the contextual prompt for whatever is in reach.
+func _update_hud() -> void:
+	if _money_label == null:
+		return
+	_money_label.text = "$ %d" % money
+	_glue_label.text = "glue: %d sacks" % glue
+	_prompt_label.text = _context_prompt()
+
+
+func _context_prompt() -> String:
+	if _driving != null:
+		return "F  step out of truck"
+	if _carried != null and is_instance_valid(_carried):
+		return "E  feed intake     LMB  throw"
+	# Loading glue at the factory dock.
+	for node in get_tree().get_nodes_in_group("glue_factory"):
+		var factory := node as GlueFactory
+		if factory != null and global_position.distance_to(factory.dock_world()) <= COLLECT_RADIUS:
+			if factory.ready_glue() > 0:
+				return "E  load %d sacks of glue" % factory.ready_glue()
+	# Selling at a market.
+	if glue > 0:
+		for node in get_tree().get_nodes_in_group("glue_market"):
+			var marker := node as Node3D
+			if marker != null and global_position.distance_to(marker.global_position) <= SELL_RADIUS:
+				return "E  sell %d sacks  ($%d)" % [glue, glue * GLUE_PRICE]
+	# Boarding a truck.
+	for node in get_tree().get_nodes_in_group("truck"):
+		var truck := node as Truck
+		if truck != null and global_position.distance_to(truck.global_position) <= TRUCK_ENTER_RADIUS:
+			return "F  drive truck"
+	return ""
 
 
 func _physics_process(delta: float) -> void:
+	# While driving, hand movement to the truck and ride along on top of it. The player is the
+	# world's streaming anchor, so pinning it to the truck is what keeps terrain, grass and trees
+	# building around the truck as it drives off toward the towns.
+	if _driving != null:
+		if is_instance_valid(_driving):
+			velocity = Vector3.ZERO
+			global_position = _driving.global_position + Vector3.UP * 1.0
+			return
+		_driving = null
+
 	if not is_on_floor():
 		velocity.y -= gravity * delta
 	elif Input.is_physical_key_pressed(KEY_SPACE):
@@ -189,7 +260,9 @@ func _drive_carried() -> void:
 
 	# Right it toward facing the way the player faces, upright. Angular velocity from the
 	# shortest-arc error, so it turns smoothly and can still be jostled by a collision.
-	var target := Basis(Vector3.UP, rotation.y).get_rotation_quaternion()
+	# Turned 90 degrees off the player's facing so the body lies ACROSS the view — nose-to-tail
+	# spanning left-to-right in front of you rather than jutting down your sightline.
+	var target := Basis(Vector3.UP, rotation.y + PI * 0.5).get_rotation_quaternion()
 	var current := _carried.global_transform.basis.get_rotation_quaternion()
 	var error := (target * current.inverse()).normalized()
 	if error.w < 0.0:
@@ -234,9 +307,12 @@ func _attack() -> void:
 		best.take_hit(forward)
 
 
-## E / right-click. Not carrying: grab what you are looking at. Carrying: feed the intake if
-## you are on it, otherwise set the cow down gently at your feet.
+## E / right-click. Behind the wheel it does nothing (F gets you out). Carrying a cow: feed the
+## intake if you are on it, otherwise set it down. Otherwise, in order: load finished glue at the
+## factory dock, sell your load at a town market, or grab the ragdoll you are looking at.
 func _interact() -> void:
+	if _driving != null:
+		return
 	if _carried != null and is_instance_valid(_carried):
 		if _feed_carried():
 			_carried.queue_free()
@@ -245,8 +321,62 @@ func _interact() -> void:
 		var forward := -camera.global_transform.basis.z
 		_carried.release(forward * DROP_SPEED + Vector3.UP * 0.5)
 		_carried = null
-	else:
-		_pickup()
+		return
+	if _try_load_glue():
+		return
+	if _try_sell_glue():
+		return
+	_pickup()
+
+
+## Load finished sacks off the factory dock into the truck-load you carry. True if any moved.
+func _try_load_glue() -> bool:
+	for node in get_tree().get_nodes_in_group("glue_factory"):
+		var factory := node as GlueFactory
+		if factory == null:
+			continue
+		if global_position.distance_to(factory.dock_world()) <= COLLECT_RADIUS and factory.ready_glue() > 0:
+			glue += factory.collect_glue()
+			return true
+	return false
+
+
+## Sell the glue you are carrying at the nearest town market you are standing at. True if sold.
+func _try_sell_glue() -> bool:
+	if glue <= 0:
+		return false
+	for node in get_tree().get_nodes_in_group("glue_market"):
+		var marker := node as Node3D
+		if marker != null and global_position.distance_to(marker.global_position) <= SELL_RADIUS:
+			money += glue * GLUE_PRICE
+			glue = 0
+			return true
+	return false
+
+
+## F: get into the nearest truck, or out of the one being driven. Entering hands the view to the
+## truck's chase camera; leaving restores the first-person camera and drops the player beside it.
+func _toggle_truck() -> void:
+	if _driving != null and is_instance_valid(_driving):
+		var drop := _driving.exit()
+		_driving = null
+		velocity = Vector3.ZERO
+		global_position = drop
+		camera.current = true
+		return
+	var best: Truck = null
+	var best_d := TRUCK_ENTER_RADIUS
+	for node in get_tree().get_nodes_in_group("truck"):
+		var truck := node as Truck
+		if truck == null:
+			continue
+		var d := global_position.distance_to(truck.global_position)
+		if d < best_d:
+			best_d = d
+			best = truck
+	if best != null:
+		_driving = best
+		best.enter(self)
 
 
 ## Left-click while carrying: punt the cow. Feeding still wins if you are right at the intake,
@@ -387,6 +517,35 @@ func _spawn_crosshair() -> void:
 	hint.offset_top = -22.0
 	hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	layer.add_child(hint)
+
+	# Money and current glue load, top-left.
+	_money_label = Label.new()
+	_money_label.modulate = Color(0.95, 0.9, 0.5)
+	_money_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_money_label.offset_left = 8.0
+	_money_label.offset_top = 6.0
+	layer.add_child(_money_label)
+
+	_glue_label = Label.new()
+	_glue_label.modulate = Color(0.85, 0.85, 0.9)
+	_glue_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_glue_label.offset_left = 8.0
+	_glue_label.offset_top = 24.0
+	layer.add_child(_glue_label)
+
+	# Context prompt, just under the crosshair.
+	_prompt_label = Label.new()
+	_prompt_label.modulate = Color(0.95, 0.95, 0.95, 0.85)
+	_prompt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_prompt_label.anchor_left = 0.5
+	_prompt_label.anchor_right = 0.5
+	_prompt_label.anchor_top = 0.5
+	_prompt_label.anchor_bottom = 0.5
+	_prompt_label.offset_left = -160.0
+	_prompt_label.offset_right = 160.0
+	_prompt_label.offset_top = 24.0
+	layer.add_child(_prompt_label)
 
 
 ## Uniformly scales a model so its combined mesh bounds stand `target` metres tall. The .glb

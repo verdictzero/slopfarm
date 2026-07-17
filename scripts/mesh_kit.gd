@@ -200,6 +200,89 @@ func rail(from: Vector3, to: Vector3, thickness: float, color: Color) -> void:
 	quad(p[1], p[2], p[3], p[0], color.darkened(0.2))    # near cap
 
 
+## A round pipe (capped cylinder) running between two arbitrary points — the workhorse for
+## detail: handrails, conduit, steam lines, tree limbs, axles. `sides` sets how round it reads.
+func pipe(from: Vector3, to: Vector3, radius: float, sides: int, color: Color) -> void:
+	var along := to - from
+	var length := along.length()
+	if length < 0.0001:
+		return
+	var dir := along / length
+	# Any two axes perpendicular to the run give the tube's cross-section ring.
+	var side := dir.cross(Vector3.UP)
+	if side.length() < 0.001:
+		side = dir.cross(Vector3.RIGHT)
+	side = side.normalized()
+	var up := dir.cross(side).normalized()
+	for i in sides:
+		var a0 := TAU * float(i) / float(sides)
+		var a1 := TAU * float(i + 1) / float(sides)
+		var r0 := (side * cos(a0) + up * sin(a0)) * radius
+		var r1 := (side * cos(a1) + up * sin(a1)) * radius
+		var shade := color.darkened(0.16 * (0.5 + 0.5 * sin(a0)))
+		quad(from + r0, from + r1, to + r1, to + r0, shade)
+		tri(to, to + r0, to + r1, color)
+		tri(from, from + r1, from + r0, color.darkened(0.28))
+
+
+## A faceted sphere (UV sphere) — domes, valve balls, tree canopies, headlamps. Low `rings`
+## and `segments` keep it on-style and cheap.
+func sphere(center: Vector3, radius: float, rings: int, segments: int, color: Color) -> void:
+	for r in rings:
+		var v0 := PI * float(r) / float(rings)
+		var v1 := PI * float(r + 1) / float(rings)
+		var y0 := cos(v0)
+		var y1 := cos(v1)
+		var s0 := sin(v0)
+		var s1 := sin(v1)
+		for s in segments:
+			var u0 := TAU * float(s) / float(segments)
+			var u1 := TAU * float(s + 1) / float(segments)
+			var p00 := center + Vector3(cos(u0) * s0, y0, sin(u0) * s0) * radius
+			var p10 := center + Vector3(cos(u1) * s0, y0, sin(u1) * s0) * radius
+			var p01 := center + Vector3(cos(u0) * s1, y1, sin(u0) * s1) * radius
+			var p11 := center + Vector3(cos(u1) * s1, y1, sin(u1) * s1) * radius
+			var shade := color.darkened(0.14 * (0.5 - 0.5 * y0))
+			if r == 0:
+				tri(p00, p11, p01, shade)
+			elif r == rings - 1:
+				tri(p00, p10, p01, shade)
+			else:
+				quad(p00, p10, p11, p01, shade)
+
+
+## A torus ring — machine rims, flywheels, tyres, pipe flanges. `ring_radius` is the big
+## circle, `tube_radius` the cross-section, in the XZ plane with `axis` up by default.
+func torus(center: Vector3, ring_radius: float, tube_radius: float, ring_sides: int,
+		tube_sides: int, color: Color) -> void:
+	for i in ring_sides:
+		var a0 := TAU * float(i) / float(ring_sides)
+		var a1 := TAU * float(i + 1) / float(ring_sides)
+		var c0 := Vector3(cos(a0), 0, sin(a0))
+		var c1 := Vector3(cos(a1), 0, sin(a1))
+		for j in tube_sides:
+			var b0 := TAU * float(j) / float(tube_sides)
+			var b1 := TAU * float(j + 1) / float(tube_sides)
+			var p00 := center + c0 * (ring_radius + cos(b0) * tube_radius) + Vector3.UP * sin(b0) * tube_radius
+			var p01 := center + c0 * (ring_radius + cos(b1) * tube_radius) + Vector3.UP * sin(b1) * tube_radius
+			var p10 := center + c1 * (ring_radius + cos(b0) * tube_radius) + Vector3.UP * sin(b0) * tube_radius
+			var p11 := center + c1 * (ring_radius + cos(b1) * tube_radius) + Vector3.UP * sin(b1) * tube_radius
+			quad(p00, p10, p11, p01, color.darkened(0.14 * (0.5 + 0.5 * sin(b0))))
+
+
+## A flat disk facing +Y (or -Y), for tank tops, gauge faces, wheel hubs.
+func disk(center: Vector3, radius: float, sides: int, color: Color, up := true) -> void:
+	for i in sides:
+		var a0 := TAU * float(i) / float(sides)
+		var a1 := TAU * float(i + 1) / float(sides)
+		var p0 := center + Vector3(cos(a0) * radius, 0, sin(a0) * radius)
+		var p1 := center + Vector3(cos(a1) * radius, 0, sin(a1) * radius)
+		if up:
+			tri(center, p0, p1, color)
+		else:
+			tri(center, p1, p0, color.darkened(0.2))
+
+
 ## A ramp wedge: a `width`(x) by `length`(z) slab whose top rises from `y_low` at -Z to
 ## `y_high` at +Z, resting on a base at `y_base`. Centred on (cx, cz). Used for the doorway
 ## threshold so the player can walk up onto the factory floor.
