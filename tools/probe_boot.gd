@@ -78,10 +78,11 @@ class _Runner:
 			return
 		var rag := rags[0] as HorseRagdoll
 
-		# Put it a known 3 m in front (in open air, above ground) so the carry test is
-		# deterministic rather than depending on which distant pen the cow spawned in.
+		# Put it a known distance in front (in open air, above ground) so the carry test is
+		# deterministic rather than depending on which distant pen the cow spawned in. Placed
+		# beyond the hold point so the drive has to reel it IN toward the camera.
 		var look := -player.camera.global_transform.basis.z
-		rag.global_position = player.camera.global_position + look * 3.0
+		rag.global_position = player.camera.global_position + look * 6.0
 		await p.physics_frame
 
 		# Grab it: gravity off, still colliding, and the player drives it toward the hold point.

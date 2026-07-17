@@ -24,9 +24,11 @@ const HIT_CONE := 0.5
 ## You grab what the crosshair is on, Half-Life style, not merely the nearest body.
 const PICKUP_REACH := 4.0
 const PICKUP_CONE := 0.55
-## Where a carried cow floats relative to the camera (in front, a touch low).
-const CARRY_DISTANCE := 2.2
-const CARRY_DROP := 0.6
+## Where a carried cow floats relative to the camera. Held well out ahead and slung low so
+## the long body clears the crosshair, and turned side-on (see _drive_carried) so it lies
+## across the view rather than pointing down it — you can see past it while you carry it.
+const CARRY_DISTANCE := 3.8
+const CARRY_DROP := 1.15
 ## Half-Life carry, all as velocities the player writes onto the held RigidBody each frame:
 ## STIFFNESS pulls it to the hold point (capped by MAX_SPEED so it never rockets), and TURN
 ## rights it to face forward (capped by TURN_MAX). It stays dynamic throughout, so it keeps
@@ -189,7 +191,9 @@ func _drive_carried() -> void:
 
 	# Right it toward facing the way the player faces, upright. Angular velocity from the
 	# shortest-arc error, so it turns smoothly and can still be jostled by a collision.
-	var target := Basis(Vector3.UP, rotation.y).get_rotation_quaternion()
+	# Turned 90 degrees off the player's facing so the body lies ACROSS the view — nose-to-tail
+	# spanning left-to-right in front of you rather than jutting down your sightline.
+	var target := Basis(Vector3.UP, rotation.y + PI * 0.5).get_rotation_quaternion()
 	var current := _carried.global_transform.basis.get_rotation_quaternion()
 	var error := (target * current.inverse()).normalized()
 	if error.w < 0.0:

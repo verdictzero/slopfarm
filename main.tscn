@@ -9,7 +9,7 @@
 shader = ExtResource("3_dither")
 shader_parameter/lut_tex = ExtResource("4_lut")
 shader_parameter/dither_strength = 0.09
-shader_parameter/pixel_size = 2.0
+shader_parameter/pixel_size = 1.0
 
 [node name="Main" type="Node3D" unique_id=1035770318]
 script = ExtResource("1_main")
