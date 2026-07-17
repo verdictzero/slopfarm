@@ -408,6 +408,35 @@ nearer once the player's offset within their own chunk is counted (at 6 / 192 th
 Also note `fog_density` **multiplies** the begin/end ramp in `FOG_MODE_DEPTH` — it is
 not a per-unit rate. It needs to be ~1.0; at small values the fog is effectively absent.
 
+## Toolchain on Claude Code web
+
+Web sessions run in a fresh, ephemeral container, so the engine and the Android
+toolchain have to be reinstalled each time. `.claude/hooks/session-start.sh` (a
+SessionStart hook registered in `.claude/settings.json`) does that, and the
+container-state cache makes it effectively persistent — the first session on an
+environment pays the download, later ones find everything under `/opt` and skip in
+seconds. It is idempotent and web-only (`CLAUDE_CODE_REMOTE`).
+
+The one wrinkle worth writing down: **Godot is only distributed from github.com,
+which this environment's egress policy blocks** (403 at the agent proxy). Docker Hub
+is reachable, and `barichello/godot-ci:4.7` carries the identical official binary
+plus the export templates, so `.claude/hooks/pull_godot.py` pulls them out of that
+image's layers over the registry HTTP API — no docker daemon needed. The Android SDK
+comes straight from `dl.google.com`, which the policy allows.
+
+What lands, matched to the project's Godot 4.7 Android build template:
+
+| | |
+|---|---|
+| Godot 4.7 editor (headless-capable) | `/opt/godot/godot`, symlinked onto `PATH` |
+| Export templates (Android + Linux) | `~/.local/share/godot/export_templates/4.7.stable/` |
+| Android SDK: platform-tools, `platforms;android-36`, `build-tools;36.1.0`, `ndk;29.0.14206865` | `/opt/android-sdk` |
+| Debug keystore + editor settings for headless Android export | `/root/debug.keystore`, `editor_settings-4.tres` |
+
+`GODOT`, `ANDROID_HOME`, `ANDROID_NDK_ROOT`, `JAVA_HOME` and the `PATH` additions are
+written to `$CLAUDE_ENV_FILE` for the session. A full APK export additionally needs
+Gradle/Maven reachable at build time, which depends on the same egress policy.
+
 ## Tools
 
 Development only, not shipped. `.shots/` is gitignored.

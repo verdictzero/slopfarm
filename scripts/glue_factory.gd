@@ -115,8 +115,8 @@ func setup(terrain: TerrainManager, player: Node3D) -> void:
 	# Floor sits at or above the highest ground under the footprint, so the terrain never
 	# poked up through the slab; the door ramp makes up the small step to the ground outside.
 	var highest := -1e9
-	for sx in [-0.5, 0.0, 0.5]:
-		for sz in [-0.5, 0.0, 0.5]:
+	for sx: float in [-0.5, 0.0, 0.5]:
+		for sz: float in [-0.5, 0.0, 0.5]:
 			var wx := CENTER.x + sx * WIDTH_X
 			var wz := CENTER.z + sz * DEPTH_Z
 			highest = maxf(highest, terrain.height_at(wx, wz))
