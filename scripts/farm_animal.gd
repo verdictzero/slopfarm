@@ -34,6 +34,14 @@ const ROAM_RANGE := 14.0
 const TURN_RATE := 1.6          # radians/sec — a horse does not pivot on the spot
 const ARRIVED := 1.2
 
+## Hits it takes before it drops. A few, so knocking one out is a deliberate act rather
+## than a stray swing, and so a flinch reaction has room to read before the collapse.
+const HIT_POINTS := 3
+## How hard the knockout throws the ragdoll away from the blow, and the lift on it — enough
+## that it visibly flops rather than just tipping where it stood.
+const KNOCK_FORCE := 6.5
+const KNOCK_LIFT := 4.5
+
 ## Past this, an animal stops animating and stops walking.
 ##
 ## This is the single biggest cost on the farm. An animating skeleton is ~0.15 ms each:
@@ -60,6 +68,7 @@ var _standing := true
 var _timer := 0.0
 var _dormant := false
 var _watch: Node3D
+var _health := HIT_POINTS
 var _rng := RandomNumberGenerator.new()
 
 
@@ -75,6 +84,11 @@ func setup(kind: StringName, cells: PackedVector2Array, terrain: TerrainManager,
 	# than fetched per frame: get_camera_3d() per animal per frame is 76 tree walks.
 	_watch = watch
 	_rng.seed = rng_seed
+	_health = HIT_POINTS
+	# Living animals answer to the player's swing; the ragdoll it becomes joins "ragdoll"
+	# instead. Groups keep the player's melee and pickup checks decoupled from the farm's
+	# node layout — no path-walking to find what is hittable.
+	add_to_group("horse")
 
 	# Size and stride are set together, before the AnimationPlayer bail-out below, so the
 	# two can never disagree about how big this animal is.
@@ -138,6 +152,50 @@ func _process(delta: float) -> void:
 	var forward := Vector2(sin(rotation.y), cos(rotation.y))
 	var step := here + forward * speed * delta
 	global_position = Vector3(step.x, _terrain.height_at(step.x, step.y), step.y)
+
+
+## Takes a blow from `from_dir` (the direction the hit travels, i.e. away from the player).
+## A few of these and the animal drops into a ragdoll; before that it bolts.
+func take_hit(from_dir: Vector3, damage: int = 1) -> void:
+	_health -= damage
+	if _health <= 0:
+		_knock_out(from_dir)
+		return
+	# Bolt away from the blow. Bypasses _walk's home-cell target so it can actually flee the
+	# player rather than politely pick a nearby graze spot; a later _walk pulls it home.
+	_dormant = false
+	_standing = false
+	var here := Vector2(global_position.x, global_position.z)
+	var away := Vector2(from_dir.x, from_dir.z)
+	if away.length() < 0.01:
+		away = Vector2(0.0, 1.0)
+	_target = here + away.normalized() * ROAM_RANGE
+	_timer = 2.5
+	if _anim != null:
+		_anim.play(_clip)
+		# A touch faster than an amble — spooked, not strolling.
+		_anim.speed_scale = (speed * 1.6) / _stride
+
+
+## Swaps this living animal for a knocked-out ragdoll and removes itself. The ragdoll is
+## parented to the current scene, not to the farm: FarmBuilder wipes its own children on a
+## plan reload, and a horse you dropped by the factory should not vanish because you saved
+## the designer.
+func _knock_out(from_dir: Vector3) -> void:
+	var model_scale := float(SCALE.get(species, 1.0))
+	var dir := from_dir
+	if dir.length() < 0.01:
+		dir = Vector3(0.0, 0.0, 1.0)
+	var impulse := dir.normalized() * KNOCK_FORCE + Vector3.UP * KNOCK_LIFT
+	# A scale-free transform: this node carries the model's display scale (SCALE), and the
+	# ragdoll re-applies that to its own visual — inheriting it here would square it, and a
+	# scaled RigidBody misbehaves besides. Position and yaw only.
+	var placement := Transform3D(Basis(Vector3.UP, rotation.y), global_position)
+	var ragdoll := HorseRagdoll.create(species, placement, model_scale, impulse, _watch)
+	var host := get_tree().current_scene
+	if host != null:
+		host.add_child(ragdoll)
+	queue_free()
 
 
 func _stand() -> void:
