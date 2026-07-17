@@ -493,17 +493,22 @@ func _build_intake_facade(door_z: float) -> void:
 	_emit(false)
 
 
-## A wedge threshold from the ground outside up to the floor, laid out long and shallow with
-## no vertical lip, so the capsule walks straight up it instead of snagging. It overlaps onto
-## the slab and runs a little wider than the door so you cannot walk off its side into the jamb.
+## A solid threshold wedge from the ground outside up to the floor. It is built THICK (a deep
+## base, not a thin floating slab) and its toe sits a touch ABOVE the real ground at the foot of
+## the ramp, so stepping from grass onto it is a seamless few-centimetre rise the capsule climbs
+## on floor-snap rather than a lip it jams against or a sliver it slips under. It overlaps onto
+## the slab and runs wider than the door so you cannot walk off its side into the jamb.
 func _build_ramp(door_z: float) -> void:
 	var hx := WIDTH_X * 0.5
 	var x_out := -hx - _ramp_len
-	var x_in := -hx + 1.2                       # overlaps onto the floor slab
-	var y_out := minf(_ground_out_y, 0.0) - 0.02
-	var y_base := y_out - 1.0
-	var hw := DOOR_W * 0.5 + 1.5                 # wider than the door
+	var x_in := -hx + 1.5                        # overlaps well onto the floor slab
 	var zc := door_z
+	# Toe height matched to the actual ground at the ramp's foot (local space), lifted just above
+	# it so the ramp top is never below the terrain the player is standing on.
+	var terr := _terrain.height_at(CENTER.x + x_out, CENTER.z + zc) - _floor_y
+	var y_out := terr + 0.12
+	var y_base := -FOUNDATION_SINK - 1.0         # a thick, deep solid — nothing to tunnel through
+	var hw := DOOR_W * 0.5 + 2.0                 # wider than the door
 	_kit.begin()
 	var t0 := Vector3(x_out, y_out, zc - hw)
 	var t1 := Vector3(x_out, y_out, zc + hw)
@@ -518,10 +523,10 @@ func _build_ramp(door_z: float) -> void:
 	_kit.quad(t0, t3, b3, b0, RAMP.darkened(0.15))                    # -Z side
 	_kit.quad(t2, t1, b1, b2, RAMP.darkened(0.15))                    # +Z side
 	_kit.quad(t1, t0, b0, b1, RAMP.darkened(0.2))                     # low end
-	# Kerb rails so it reads as a loading ramp (kept low and outside the walk surface).
-	_kit.box(Vector3((x_out + x_in) * 0.5, y_out * 0.5 + 0.1, zc - hw), Vector3(_ramp_len, 0.3, 0.3), HAZARD)
-	_kit.box(Vector3((x_out + x_in) * 0.5, y_out * 0.5 + 0.1, zc + hw), Vector3(_ramp_len, 0.3, 0.3), HAZARD)
-	_emit(true)
+	# Low kerbs down the outer edges so it reads as a loading ramp, set outside the walk surface.
+	_kit.box(Vector3((x_out + x_in) * 0.5, y_out + 0.15, zc - hw), Vector3(_ramp_len, 0.3, 0.3), HAZARD)
+	_kit.box(Vector3((x_out + x_in) * 0.5, y_out + 0.15, zc + hw), Vector3(_ramp_len, 0.3, 0.3), HAZARD)
+	_emit_ramp()
 
 
 ## A rooftop sign and a dock placard, so the works reads as a place and the dock as the spot
@@ -1066,6 +1071,26 @@ func _apply_gore_ramp(p: CPUParticles3D) -> void:
 
 
 # ---- emit -------------------------------------------------------------------
+
+## Emits the ramp mesh with a trimesh body whose collision is two-sided, so the capsule can
+## never end up wedged on the underside or inside the wedge — every face stops it.
+func _emit_ramp() -> void:
+	var mesh := _kit.commit()
+	if mesh == null:
+		return
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = _mat
+	add_child(mi)
+	var shape := mesh.create_trimesh_shape()
+	if shape != null:
+		shape.backface_collision = true
+		var body := StaticBody3D.new()
+		var col := CollisionShape3D.new()
+		col.shape = shape
+		body.add_child(col)
+		mi.add_child(body)
+
 
 ## Commits the current MeshKit buffer as a child MeshInstance3D, optionally with a static
 ## trimesh body so the player cannot walk through it.
