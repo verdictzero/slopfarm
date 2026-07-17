@@ -62,9 +62,10 @@ func _load_farm_plan() -> void:
 		push_warning("farm plan not applied: %s" % plan.error)
 	terrain.apply_farm_plan(plan)
 	var stats := _farm.rebuild(plan, terrain)
-	print("farm plan: %s | %d structures, %d fences, %d animals, %d crop blocks, %d nodes" % [
+	print("farm plan: %s | %d structures, %d fences, %d animals, %d crop blocks, %d grass blocks, %d nodes" % [
 		"loaded" if plan.loaded else plan.error,
-		stats.structures, stats.fences, stats.animals, stats.crop_blocks, stats.draws])
+		stats.structures, stats.fences, stats.animals, stats.crop_blocks,
+		stats.grass_blocks, stats.draws])
 
 func _setup_environment() -> void:
 	var env := Environment.new()

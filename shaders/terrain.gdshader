@@ -19,9 +19,15 @@ render_mode diffuse_lambert, specular_disabled, cull_disabled;
 // genuinely vertical walls and do stretch — they are pinhole plugs seen edge-on for a
 // few pixels, so it does not matter there either.)
 //
-// All three textures are sampled unconditionally. Branching to skip one would put a
+// All four textures are sampled unconditionally. Branching to skip one would put a
 // texture fetch inside non-uniform control flow, where the implicit derivative -- and
 // therefore the mipmap level -- is undefined.
+//
+// Four, not three, since mud arrived: the trample map blends the authored ground toward
+// mud around gates and troughs, and a blend needs both ends present. It is the one ground
+// type that is not exclusive -- every other layer is CHOSEN by the zone map, so they cost
+// one indexed sample between them however many the designer grows. Mud is the exception
+// worth its own fetch, and it is the only one that should ever be.
 //
 // The filter is nearest_mipmap_ANISOTROPIC, and the anisotropic part is load-bearing.
 // Ground is only ever seen at a grazing angle, where a pixel's footprint along the view
@@ -65,9 +71,25 @@ uniform float plan_cell_size = 2.0;
 uniform int plan_grid = 256;
 uniform bool plan_active = false;
 
+// How churned the ground is, 0..1 per cell — see FarmPlan.trample_texture.
+//
+// filter_nearest, like everything else here. This was filter_linear on the theory that
+// trampling is a physical gradient and wants interpolating across cells, where a pen's
+// edge does not — that theory is wrong, and measurably so: rendered both ways, the mud is
+// indistinguishable (mean |d/dx| 33.53 linear vs 33.46 nearest standing on it, identical
+// max), because the PALETTE already quantises this ramp to about four steps, which is
+// coarser than the 2m cell grid it was smoothing. Linear bought sub-cell smoothness that
+// the 512-colour snap then threw away, and paid a sampler's worth of confusion for it.
+//
+// The lesson generalises: this game snaps everything to 512 colours, so any gradient
+// finer than a palette step is invisible by construction. Smoothing below that resolution
+// is always free of benefit here.
+uniform sampler2D trample_map : filter_nearest, repeat_disable;
+
 const float LAYER_PASTURE = 0.0;
 const float LAYER_DIRT = 1.0;
-const float LAYER_ROCK = 4.0;
+const float LAYER_MUD = 4.0;
+const float LAYER_ROCK = 5.0;
 
 varying vec3 v_world;
 varying vec3 v_world_normal;
@@ -102,6 +124,21 @@ vec2 planned_ground(vec2 world_xz) {
 	return vec2(layer, 1.0);
 }
 
+// How churned this pixel is, 0..1. Same shape as planned_ground above, and for the same
+// reason: texelFetch takes an explicit LOD, so it is the one kind of read allowed behind
+// this early-out — an implicit derivative inside non-uniform control flow is undefined.
+//
+// Fetching by integer cell also means there is no UV to get half a texel wrong, which the
+// filter_linear version this replaces had to reason about carefully: get that offset wrong
+// and every mud patch sits a metre north-west of the gate that made it.
+float trample_at(vec2 world_xz) {
+	ivec2 cell = ivec2(floor((world_xz - vec2(plan_origin)) / plan_cell_size));
+	if (!plan_active || any(lessThan(cell, ivec2(0))) || any(greaterThanEqual(cell, ivec2(plan_grid)))) {
+		return 0.0;
+	}
+	return texelFetch(trample_map, cell, 0).r;
+}
+
 void fragment() {
 	vec2 uv = v_world.xz / tile_world_units;
 
@@ -110,6 +147,7 @@ void fragment() {
 	vec2 planned = planned_ground(v_world.xz);
 	vec3 base = texture(ground_tex, vec3(uv, planned.x)).rgb;
 	vec3 dirt = texture(ground_tex, vec3(uv, LAYER_DIRT)).rgb;
+	vec3 mud = texture(ground_tex, vec3(uv, LAYER_MUD)).rgb;
 	vec3 rock = texture(ground_tex, vec3(v_world.xz / rock_tile_world_units, LAYER_ROCK)).rgb;
 
 	// Face normals (vertices are not shared), so slope is per-facet and the cover
@@ -130,6 +168,12 @@ void fragment() {
 	to_rock *= 1.0 - authored;
 
 	vec3 albedo = mix(base, dirt, to_dirt);
+	// Trampling sits between dirt and rock: it overrides whatever the pen was authored as
+	// (that is the point — a grazed paddock is still a paddock, but not at the gate), while
+	// rock still wins over it. They never actually meet, since trampling only exists in the
+	// basin's pens and rock needs 20-plus degrees, but the ordering says which is physical
+	// ground and which is a use pattern laid over it.
+	albedo = mix(albedo, mud, trample_at(v_world.xz));
 	albedo = mix(albedo, rock, to_rock);
 
 	// COLOR is a large-scale tint baked per face by terrain_manager.gd, centred near

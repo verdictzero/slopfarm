@@ -26,6 +26,10 @@ func _ready() -> void:
 	await _pass("farm, eye height, static", Vector3.ZERO, 2.0, false)
 	await _pass("farm, eye height, walking", Vector3.ZERO, 2.0, true)
 	await _pass("standing in the wheat", Vector3(60.0, 0.0, 95.0), 1.7, false)
+	# Deep in West Pasture, which is the grass's worst case: 30,000 m² of it, nothing else
+	# to draw, and every tuft in cull range is near enough to cost fill.
+	await _pass("standing in the pasture", Vector3(-120.0, 0.0, 120.0), 1.7, false)
+	await _pass("pasture, walking", Vector3(-120.0, 0.0, 120.0), 1.7, true)
 	await _pass("elevated +40, static", Vector3.ZERO, 40.0, false)
 
 	get_tree().quit()

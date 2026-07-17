@@ -36,11 +36,11 @@ rewriting 65k integers.
 | | |
 |---|---|
 | **Zones** | Cells store a zone *id*; zones carry the meaning (ground, contents, fenced). Retyping a zone repaints every cell that belongs to it. Zone 0 = "not authored". |
-| **Ground** | `pasture`, `dirt`, `road`, `crop` — indices into the ground texture array. |
+| **Ground** | `pasture`, `dirt`, `road`, `crop`, `mud` — indices into the ground texture array. Append-only: the integers are in `plan.json`, so reordering silently repaints every zone. |
 | **Contents** | `cow` / `horse` + a count, scattered over that zone's cells (not its bounding box, so an L-shaped pen doesn't put a cow in the notch). They walk: wander to a spot in their zone, amble there, stand a while, repeat. |
-| **Standing crop** | A `crop` zone grows wheat automatically from `sprites/wheat_plant_*.png` — four variants, Y-billboarded, one MultiMesh per variant per 16 m block, culled per block by distance. |
-| **Fenced** | Derived, not drawn: a post-and-rail fence is generated along every cell edge where the zone meets something else, merged to one mesh per zone. |
-| **Structures** | Points with a yaw: barn, shed, silo, coop, trough, haystack, well. Procedural geometry — there is no building art. One merged mesh each, so one draw call each, and a trimesh body off that same mesh so you can't walk through them. |
+| **Growing** | The ground type alone decides what grows — painting a zone *is* saying what it is. A `crop` zone grows wheat from `sprites/wheat_plant_*.png`; a `pasture` zone grows grass tufts generated at startup (`GrassSprites`). Both go through the same scatter: Y-billboarded, one MultiMesh per variant per 16 m block, culled per block by distance. |
+| **Fenced** | Derived, not drawn: a post-and-rail fence is generated along every cell edge where the zone meets something else, merged to one mesh per zone — gate included. |
+| **Structures** | Points with a yaw, all procedural geometry — there is no building art. One merged mesh each, so one draw call each, and a trimesh body off that same mesh so you can't walk through them. The yard: `house`, `barn`, `shed`, `silo`, `coop`, `well`. Grain: `granary`, `corn_crib`, `grain_bin`. Machinery and livestock: `machine_shed`, `stable`, `pigsty`. Landmarks: `windmill`, `water_tower`. Clutter: `trough`, `haystack`, `hay_feeder`, `compost_heap`, `fuel_tank`, `log_pile`. |
 
 Load-bearing decisions:
 
@@ -67,6 +67,82 @@ Load-bearing decisions:
   ms is perfectly usable. The disqualifier is that `PhotoImage.zoom` scales on the CPU —
   2.90 / 11.42 / **52.21** ms at 3× / 6× / 12× — so it degrades exactly as you zoom in to
   place a fence. Qt hands scaling to the blitter, so pan and zoom stay flat.
+
+### What the plan implies but doesn't say
+
+Three things are *derived* from the plan rather than authored in it, on the same footing as
+the fences. A fence isn't drawn either — it falls out of "this zone is fenced" plus the
+zone's shape. These fall out the same way, and re-derive when you move what they hang off.
+
+This is the README's own rule about not letting two systems invent the same thing, applied
+rather than repeated. None of these decides where anything *should be*; each answers a
+question the plan already implies:
+
+- **Gates** (`FarmPlan._derive_gates`). One per fenced zone, on the stretch of fence
+  nearest the road — a gate exists to be driven through, so it belongs where the traffic
+  already is. The fence leaves those cells empty and hangs a leaf in the hole, swung nearly
+  flat: a shut gate is a fence with extra steps, and reads as nothing from ten metres.
+  Held on the plan rather than worked out in `FarmBuilder` because *three* things need the
+  same answer — the fence (to leave a hole), the roads (to aim at it) and the trample map
+  (to muddy it). Derived twice is derived differently the day one of them changes.
+- **Tracks** (`FarmRoads`). The designer paints a trunk road, hangs gates and drops
+  buildings; this joins them up. Greedy nearest-first attachment via `AStarGrid2D` — C++,
+  because this runs on every save and the same loop in GDScript does not finish in time.
+  Each spur joins whatever road already exists, so two gates on one side of the farm share
+  a track out instead of running parallel. Pen interiors are solid and only the gate cell is punched walkable, so
+  a spur arrives *at* the gate and stops rather than driving through the herd. Crop is
+  expensive but not solid — impassable would mean a barn behind a wheat field silently
+  loses its track. **No trunk means no network**: inventing one would be exactly the second
+  opinion this avoids.
+- **Trampling** (`FarmPlan.trample_field`). Only zones that actually hold animals — an
+  empty pen is fenced grass. Three sources, because they're the three places stock stand
+  rather than graze: the gate they queue at, the troughs and feeders they crowd, and the
+  fence line they walk. The noise modulates the *radius*, not the result: the palette has
+  about four usable steps across this ramp, so a clean radial falloff quantises into four
+  hard concentric rings under the dither. Perturbing the radius makes the steps wander.
+
+Tracks are stamped into the ground-layer **texture**, never back into `cells`. `cells` is
+the designer's document, and a spur is not a zone — it has no contents, no fence and no
+name, so writing one in would put zone ids in the file with no zone to go with them.
+
+All three run on every save, so `tools/probe_derive.gd` keeps them honest:
+
+    godot-4 --headless --path . --script res://tools/probe_derive.gd
+
+| | |
+|---|---|
+| parse + gates + tracks | 115 ms |
+| ...of which `FarmRoads.derive` | 90 ms (479 cells, 21 structures) |
+| `trample_field` | 77 ms, then 0 cached |
+
+**The track cost scales with destination count, not farm size** — one A* run plus a nearest
+scan per gate and per open-air structure. It was 36 ms at 7 structures and 90 ms at 21, so
+a yard with a hundred props is the thing that would make saving hurt, not a bigger map.
+`trample_field` is cached because the shader's texture and the grass scatter both want it,
+and paying 77 ms twice a save for the same immutable answer is just a bug with good manners.
+
+Mud is the one ground type that is **blended** rather than chosen, which is why it costs
+the shader a fourth sample where every other type shares one indexed fetch. It rides a
+separate `trample_map`, read by `texelFetch` on the integer cell exactly like `zone_map`.
+
+`trample_map` was briefly `filter_linear`, on the reasoning that trampling is a physical
+gradient and wants interpolating across cells where a pen's edge does not. **That was wrong,
+and the measurement says so**: rendered both ways the mud is indistinguishable — mean |d/dx|
+33.53 linear vs 33.46 nearest standing on it, identical max, and `texelFetch` comes out
+bit-identical to the nearest sampler. The reason is one this file already knew: the palette
+has ~4 usable steps across that ramp, so it quantises the blend *coarser than the 2 m cell
+grid the interpolation was smoothing*. Linear bought sub-cell smoothness that the 512-colour
+snap then threw away.
+
+That generalises, and it is worth stating once: **this game snaps everything to 512 colours,
+so any gradient finer than a palette step is invisible by construction.** Smoothing below
+that resolution is never a trade-off here — it is just cost.
+
+The blend is what makes this survive contact with a 200×150 m grazing field: forcing every
+animal zone to mud would turn West Pasture into a bog with cows in it. Grass thins by the
+same field — the probability a tuft is skipped *is* the trample value, so the grass fades
+out exactly as the mud fades in, and a hard threshold would draw a visible contour around
+every gate.
 
 ### Animals and crop, and what they cost
 
@@ -95,6 +171,40 @@ is fill from *near* sprites, which are never culled. Culling 46→30 m bought 1 
 hit a floor; halving density bought 4 ms. Crop is unshaded with the sun baked in, because
 a billboard's normal faces the camera — lit, the stalks measured 5.2× the brightness of
 the ground they stand in, i.e. neon yellow in a dark field.
+
+**Pasture grass takes that measurement as its brief.** It goes over ~40,000 m² of pasture
+where the whole wheat field is 12,500, and it can only afford that by being *small* rather
+than by being far away: a tuft is 0.4 m against the wheat's 1.5 m, roughly 14× less fill
+each. Density (5/m²) is set for the look and the cull (22 m) is short because a 0.4 m tuft
+is sub-pixel at 640×360 long before then — the mipmapped cutout has already thinned it to
+nothing by ~20 m, which is free distance fade.
+
+Grass is baked at `GRASS_LIGHT` 0.50, and that number is measured the same way the crop's
+was: lit pasture renders (33,49,25), and at 0.72 the tufts came out (66,74,41) — 1.5–2× the
+ground. That's the crop's neon-field failure again, just quieter, and it read as pale sprigs
+scattered *on* pasture rather than as the pasture itself.
+
+| grass | median | draws | VRAM |
+|---|---|---|---|
+| standing in the pasture, on | 3.33 ms | 230 | 41.0 MB |
+| standing in the pasture, off | 2.78 ms | 212 | 31.9 MB |
+
+So **+0.55 ms and +9.1 MB**, in the worst case the harness has (deep in West Pasture with
+nothing else to draw). Everywhere else it's inside the noise — the "farm, eye height" pass
+came out *faster* with grass on, which is the honest measure of this box's noise floor
+(~0.4 ms). **These are dev-box numbers, not Pi numbers**, unlike every other measurement
+here: this box renders the farm in ~2.4 ms where the Pi took 18. Treat the delta as a
+ratio, not a budget, and re-measure on the Pi before trusting it.
+
+The VRAM is the part worth knowing: 5/m² over 40,000 m² is ~204k instances × 48 bytes of
+transform ≈ 9.8 MB, which is what the +9.1 measures. Those buffers exist for the whole
+pasture even though only a 22 m circle is ever drawn — the cull drops *draws*, not memory.
+Density is the only lever on it, which is the same conclusion the crop reached by a
+different road.
+
+(`tools/probe_cover.gd` and the cover table above model the *slope* rules, which none of
+this changed. Neither models the trample blend or the derived tracks, so both now describe
+the ground's base rules rather than every pixel of it.)
 
 The animals were also unusable as shipped and are fixed at import, not in code:
 `nodes/root_scale` (cow 90, horse 190 — they are authored at different scales, so there is
@@ -144,6 +254,38 @@ macro field, which is what stops a 4-unit texture repeat reading as a grid. It i
 per face, so it costs nothing per fragment. Rock tiles coarser (11 units) than grass and
 dirt (4) because it only ever appears on distant hillsides seen close to face-on, where a
 4-unit repeat tiled a dozen times across one slope and read as woven fabric.
+
+### Every texture is nearest-filtered, and one of them wasn't
+
+The look depends on it end to end, so it is worth writing down as a rule rather than a
+habit: **nothing in this game is ever smoothed.** `tools/probe_filter.gd` audits it.
+
+The upscale itself is free — with `stretch/mode=viewport`, Godot's GL Compatibility
+renderer hardcodes the blit to `GL_NEAREST` (`_blit_render_target_to_screen`), so 640×360 →
+1280×720 arrives as crisp squares with no setting involved. `rendering/scaling_3d` cannot do
+this: its modes are Bilinear/FSR only, which is exactly why it was dropped (see the table
+below).
+
+Everything upstream of the blit asks for nearest explicitly — the ground
+(`filter_nearest_mipmap_anisotropic`), the zone and trample maps, both dither fetches, and
+the crop/grass billboards (`NEAREST_WITH_MIPMAPS`).
+
+**The animals were smoothed for months.** `cow.glb` and `horse.glb` came out of the importer
+at `LINEAR_MIPMAP` — the only linear-filtered art in the game. It hid because texture
+filtering on a 3D material is a **material** property, not an import setting, so it never
+appears in a `.import` file next to the `compress/mode` and `mipmaps/generate` lines you'd
+actually think to audit. `FarmBuilder._force_pixel_look` drags them into line at
+instantiate; the materials come off the `.glb` shared, so it reaches every animal of the
+species, the same way the walk's `LOOP_LINEAR` fix does.
+
+The moral is the same one `lut_512.png`'s hand-written `.import` exists to enforce, one
+level further in: **the importer's defaults are not this game's defaults**, and the settings
+it does not write down are the ones that bite.
+
+Structure materials are `CULL_DISABLED`. Most of what `FarmBuilder` builds is a closed box
+that never shows a backface, but not all of it — the machine shed's roof is a single `_quad`
+and every `_gable` is two, so one-sided they vanish from under the eaves. Measured, it costs
+nothing detectable (identical medians on every pass that has structures in view).
 
 ## The palette and dither
 
@@ -198,6 +340,8 @@ Development only, not shipped. `.shots/` is gitignored.
 | `tools/farmshot.tscn` | Screenshots of the authored farm. |
 | `tools/probe_terrain.gd` | Terrain shape statistics, headless. |
 | `tools/probe_slope.gd` | Slope distribution — run before touching any slope threshold. |
+| `tools/probe_derive.gd` | Times gates, tracks and trampling — run before adding anything the plan derives, since all of it runs on every save. |
+| `tools/probe_filter.gd` | Audits every 3D material's texture filter and cull mode. Filtering is a *material* property, not an import setting, so a `.glb`'s materials never show up in a `.import` file to be eyeballed — this is how you find the one that is quietly linear. |
 | `tools/probe_cover.gd` | What the grass/dirt/rock rules actually claim, area-weighted. |
 | `tools/shot.tscn` | Screenshots into `.shots/`. |
 | `tools/perf.tscn` | Frame timing while walking out from the farm. |

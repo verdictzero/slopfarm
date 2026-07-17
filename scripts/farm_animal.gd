@@ -13,15 +13,20 @@ class_name FarmAnimal
 ## - It does NOT loop (loop_mode = LOOP_NONE as imported). Left alone it plays once and
 ##   freezes mid-stride, which is what the farm shipped doing.
 ## - Stride is 0.53 m/cycle for a cow and 0.91 m for a horse, measured as the fore-aft
-##   excursion of the feet in world space. Walking faster than stride/cycle is what
+##   excursion of the feet on the unscaled model. Walking faster than stride/cycle is what
 ##   moonwalking IS, so speed and playback rate are derived from each other rather than
 ##   picked independently.
 ## - There is no idle pose to stand in, so standing means holding the frame where all
 ##   four feet are down: t=0.200 for a cow, t=0.183 for a horse.
 
-## Metres advanced per cycle of the clip, measured per species. Playback rate is scaled
-## from this, so any speed stays foot-locked.
+## Metres advanced per cycle of the clip, measured per species on the unscaled model.
+## Playback rate is scaled from this, so any speed stays foot-locked.
 const STRIDE := {&"cow": 0.53, &"horse": 0.91}
+## Display size, as a multiple of the model's native size. The clip's foot excursion is in
+## model space, so this multiplies into STRIDE: a 3x cow whose feet still only claim 0.53m
+## a cycle skates. Speed follows stride, so a bigger animal also covers ground faster,
+## which is what long legs do.
+const SCALE := {&"cow": 3.0, &"horse": 2.0}
 ## The frame where all four feet are planted — the only pose worth stopping on.
 const STAND_FRAME := {&"cow": 0.200, &"horse": 0.183}
 
@@ -44,6 +49,9 @@ const ACTIVE_RANGE := 55.0
 
 var species: StringName
 var speed: float = 0.5
+## STRIDE for this species with SCALE already folded in — the distance the feet actually
+## claim per cycle at the size this animal is drawn.
+var _stride: float = 0.6
 var _home_cells: PackedVector2Array
 var _terrain: TerrainManager
 var _anim: AnimationPlayer
@@ -69,6 +77,13 @@ func setup(kind: StringName, cells: PackedVector2Array, terrain: TerrainManager,
 	_watch = watch
 	_rng.seed = rng_seed
 
+	# Size and stride are set together, before the AnimationPlayer bail-out below, so the
+	# two can never disagree about how big this animal is.
+	scale = Vector3.ONE * float(SCALE.get(species, 1.0))
+	_stride = float(STRIDE.get(species, 0.6)) * scale.x
+	# A little spread so a herd is not one organism.
+	speed = _stride * _rng.randf_range(0.8, 1.25)
+
 	_anim = find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if _anim == null or _anim.get_animation_list().is_empty():
 		push_warning("%s has no AnimationPlayer; it will stand still" % kind)
@@ -78,12 +93,10 @@ func setup(kind: StringName, cells: PackedVector2Array, terrain: TerrainManager,
 	# shared resource, so this also fixes every other animal of this species.
 	_anim.get_animation(_clip).loop_mode = Animation.LOOP_LINEAR
 
-	# A little spread so a herd is not one organism: speed varies, and playback follows
-	# it so the feet stay locked to the ground at whatever speed this one walks.
-	var stride: float = STRIDE.get(species, 0.6)
-	speed = stride * _rng.randf_range(0.8, 1.25)
+	# Playback follows speed, so the feet stay locked to the ground at whatever speed this
+	# one walks.
 	_anim.play(_clip)
-	_anim.speed_scale = speed / stride
+	_anim.speed_scale = speed / _stride
 	_anim.seek(_rng.randf() * _anim.get_animation(_clip).length, true)
 	_stand()
 
@@ -103,7 +116,7 @@ func _process(delta: float) -> void:
 					_anim.pause()
 			elif not _standing and _anim != null:
 				_anim.play(_clip)
-				_anim.speed_scale = speed / float(STRIDE.get(species, 0.6))
+				_anim.speed_scale = speed / _stride
 		if _dormant:
 			return
 
@@ -157,4 +170,4 @@ func _walk() -> void:
 	_timer = here.distance_to(_target) / maxf(speed, 0.05) + 6.0
 	if _anim != null:
 		_anim.play(_clip)
-		_anim.speed_scale = speed / float(STRIDE.get(species, 0.6))
+		_anim.speed_scale = speed / _stride

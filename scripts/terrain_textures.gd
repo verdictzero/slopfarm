@@ -2,8 +2,8 @@ extends RefCounted
 class_name TerrainTextures
 ## Builds the low-res ground textures from tileable value noise, as one Texture2DArray.
 ##
-## Generated at startup rather than baked to PNGs: these are three 32x32 images, about
-## 3k texels of cheap noise, which costs milliseconds. Committing binaries and
+## Generated at startup rather than baked to PNGs: these are six 32x32 images, about
+## 6k texels of cheap noise, which costs milliseconds. Committing binaries and
 ## hand-writing .import files to defeat VRAM compression -- the dance lut_512.png has
 ## to do -- would buy nothing and adds two more things to keep in sync.
 ##
@@ -21,10 +21,16 @@ class_name TerrainTextures
 ## slower cross-blend), and a seam repeated across a flat plain would be glaring.
 ##
 ## All layers live in ONE Texture2DArray so the shader can pick a layer with a value
-## read from the farm plan's zone map. That keeps the cost at three samples no matter how
-## many ground types the designer offers -- a sampler per type would mean a sample per
-## type, since a sampler cannot be indexed dynamically. (Verified working in
-## gl_compatibility on V3D before this was built on.)
+## read from the farm plan's zone map. That keeps the cost flat no matter how many ground
+## types the designer offers -- a sampler per type would mean a sample per type, since a
+## sampler cannot be indexed dynamically. (Verified working in gl_compatibility on V3D
+## before this was built on.)
+##
+## "Flat" is four samples, not three, and mud is why. Every other layer is CHOSEN by the
+## zone map, so they cost one indexed fetch between them; mud is BLENDED over whatever was
+## chosen (the trample map decides how much), and a blend needs both ends present at once.
+## It is the only ground type that should ever earn its own fetch -- anything else the
+## designer adds must go through the indexed path.
 
 ## Texture side in pixels. Low-res on purpose: this is the "nearest neighbour" look.
 const SIZE := 32
@@ -37,16 +43,22 @@ const TILE_WORLD_UNITS := 4.0
 ## across one slope and reads as woven fabric rather than stone.
 const ROCK_TILE_WORLD_UNITS := 11.0
 
-# Layer indices into the array. 0-3 are the ground types the farm designer can assign to
+# Layer indices into the array. 0-4 are the ground types the farm designer can assign to
 # a zone, and their order MUST match GROUND_TYPES in tools/farm_plan.py — the plan stores
 # these as raw integers in the zone map. Rock is not authorable: it is only ever reached
 # through the slope rules, so it lives past the end.
+#
+# Mud is authorable AND reached automatically: the trample map blends toward it around
+# gates and troughs (see FarmPlan.trample_texture). It sits at the end of the authorable
+# range so adding it did not renumber pasture..crop — those integers are already written
+# into farm/plan.json, so renumbering them would silently repaint every authored zone.
 const LAYER_PASTURE := 0
 const LAYER_DIRT := 1
 const LAYER_ROAD := 2
 const LAYER_CROP := 3
-const LAYER_ROCK := 4
-const LAYER_COUNT := 5
+const LAYER_MUD := 4
+const LAYER_ROCK := 5
+const LAYER_COUNT := 6
 
 # Four tones per material, dark to light. These are albedo, so lighting scales them
 # before the palette sees them -- they are deliberately mid-range, not near-white.
@@ -73,6 +85,14 @@ const CROP_RAMP: Array[Color] = [
 	Color(0.29, 0.30, 0.13), Color(0.42, 0.40, 0.17),
 	Color(0.56, 0.50, 0.21), Color(0.69, 0.62, 0.28),
 ]
+# Darker, wetter and greyer than dirt, which is the whole point of having both: mud is
+# blended ON TOP of dirt around a gate (see the trample map), so if it read as just more
+# dirt the trampling would be invisible exactly where it is strongest. Measured against
+# DIRT_RAMP this is ~0.6x the luminance and half the saturation.
+const MUD_RAMP: Array[Color] = [
+	Color(0.16, 0.13, 0.11), Color(0.22, 0.18, 0.15),
+	Color(0.29, 0.24, 0.19), Color(0.36, 0.31, 0.25),
+]
 
 # Lattice period across one tile. 4 gives features a few texels across at this size.
 const BASE_PERIOD := 4
@@ -86,6 +106,7 @@ static func build(noise_seed: int) -> Texture2DArray:
 	images[LAYER_DIRT] = _make(&"dirt", DIRT_RAMP, noise_seed + 211)
 	images[LAYER_ROAD] = _make(&"road", ROAD_RAMP, noise_seed + 419)
 	images[LAYER_CROP] = _make(&"crop", CROP_RAMP, noise_seed + 523)
+	images[LAYER_MUD] = _make(&"mud", MUD_RAMP, noise_seed + 631)
 	images[LAYER_ROCK] = _make(&"rock", ROCK_RAMP, noise_seed + 307)
 
 	var array := Texture2DArray.new()
@@ -148,6 +169,13 @@ static func _material_field(kind: StringName, u: float, v: float, seed_value: in
 			# 4-unit tile. The noise stops it reading as a barcode.
 			var furrow := 0.5 + 0.5 * sin(u * TAU)
 			return 0.60 * furrow + 0.40 * _fbm(u * 2.0, v * 2.0, BASE_PERIOD * 2, 3, seed_value)
+		&"mud":
+			# Broad wallows with hoof pocking on top. The pocking is squared to bias it dark:
+			# churned ground is mostly hollows with the odd ridge between them, and a
+			# symmetric noise reads as gravel instead of as mud.
+			var wallow := _fbm(u, v, BASE_PERIOD, 2, seed_value)
+			var pock := _fbm(u * 6.0, v * 6.0, BASE_PERIOD * 6, 2, seed_value + 23)
+			return 0.60 * wallow + 0.40 * pock * pock
 		_:
 			# Rock gets ridges: 1 - |signed noise| creates creases that read as cracks.
 			var crack := 1.0 - absf(_fbm(u * 2.0, v * 2.0, BASE_PERIOD * 2, 3, seed_value + 19) * 2.0 - 1.0)

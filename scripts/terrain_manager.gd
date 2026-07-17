@@ -178,6 +178,10 @@ func height_at(world_x: float, world_z: float) -> float:
 ## above still apply, so this cannot make the terrain inconsistent with itself.
 func apply_farm_plan(plan: FarmPlan) -> void:
 	_material.set_shader_parameter(&"zone_map", plan.ground_layer_texture())
+	# Always set, even for a plan that failed to load: an unset sampler2D reads as opaque
+	# white in Godot, which here means "trampled to mud, everywhere". A broken plan has to
+	# fall back to bare terrain, not to a world-sized bog.
+	_material.set_shader_parameter(&"trample_map", plan.trample_texture())
 	_material.set_shader_parameter(&"plan_origin", FarmPlan.ORIGIN)
 	_material.set_shader_parameter(&"plan_cell_size", FarmPlan.CELL_SIZE)
 	_material.set_shader_parameter(&"plan_grid", FarmPlan.GRID)

@@ -38,13 +38,30 @@ ORIGIN = -EXTENT / 2.0             # -256: the grid's top-left corner in world s
 NATURAL_ZONE = 0
 
 # Ground types. The index is the layer in the game's ground Texture2DArray, so the order
-# here is load-bearing and must match scripts/terrain_textures.gd.
-GROUND_TYPES = ["pasture", "dirt", "road", "crop"]
+# here is load-bearing and must match scripts/terrain_textures.gd. Append only: these
+# integers are already written into farm/plan.json, so reordering silently repaints every
+# authored zone.
+#
+# "mud" is paintable here, but an animal zone also gets it automatically around its gates
+# and troughs — see FarmPlan.trample_texture in the game. Painting it is for a pen that is
+# a mud bath end to end.
+GROUND_TYPES = ["pasture", "dirt", "road", "crop", "mud"]
 
 # Species the game can spawn into a zone. None means the area is just ground.
 CONTENTS = ["none", "cow", "horse"]
 
-STRUCTURE_TYPES = ["barn", "shed", "silo", "coop", "trough", "haystack", "well"]
+STRUCTURE_TYPES = [
+    # The yard.
+    "house", "barn", "shed", "silo", "coop", "well",
+    # Storage and grain.
+    "granary", "corn_crib", "grain_bin",
+    # Machinery and livestock.
+    "machine_shed", "stable", "pigsty",
+    # Water and wind. Tall enough to read from across the basin, like the silo.
+    "windmill", "water_tower",
+    # Yard clutter: small props that fill dead space and make the farm look worked.
+    "trough", "haystack", "hay_feeder", "compost_heap", "fuel_tank", "log_pile",
+]
 
 # Editor swatches. Not what the game renders — just what reads clearly top-down.
 GROUND_COLOURS = {
@@ -52,6 +69,7 @@ GROUND_COLOURS = {
     "dirt": (140, 100, 62),
     "road": (150, 148, 140),
     "crop": (160, 128, 70),
+    "mud": (74, 58, 46),
 }
 # Deliberately desaturated and dark: unpainted ground must not be mistakable for a
 # painted pasture zone, or you cannot see what you have actually authored.
@@ -213,14 +231,45 @@ def default_plan() -> FarmPlan:
     rect(3, -120, -60, -12, 40)    # horse paddock west of the road
     rect(5, 6, 40, 120, 150)       # wheat field
     rect(6, -230, 60, -30, 210)    # big grazing pasture, south-west
+    # The yard reads as a farm because of where things sit relative to each other, not
+    # because of how many things there are: house and barn face each other across the
+    # track, grain stands together at the north end, machinery keeps its own corner, and
+    # the tall pair (silo, water tower) are split apart so they read as two landmarks
+    # rather than one clump.
     plan.structures = [
-        Structure("barn", 30.0, -20.0, 0.0),
-        Structure("silo", 52.0, -30.0, 0.0),
-        Structure("coop", 20.0, 14.0, 90.0),
-        Structure("trough", 80.0, -14.0, 0.0),
-        Structure("haystack", 44.0, 18.0, 0.0),
-        Structure("well", 14.0, -34.0, 0.0),
+        # House and barn either side of the yard, both gable-on to the road.
+        Structure("house", 18.0, -30.0, 90.0),
+        Structure("barn", 34.0, -18.0, 0.0),
+        Structure("well", 24.0, -38.0, 0.0),
+        Structure("log_pile", 12.0, -22.0, 0.0),
+        # Grain: the old silo and the new bin next to each other, stores behind them.
+        Structure("silo", 52.0, -32.0, 0.0),
+        Structure("grain_bin", 44.0, -34.0, 0.0),
+        Structure("granary", 52.0, -22.0, 90.0),
+        Structure("corn_crib", 52.0, -12.0, 90.0),
+        # Machinery, off the yard's south-east corner where a tractor can swing out.
+        Structure("machine_shed", 40.0, 8.0, 180.0),
+        Structure("fuel_tank", 30.0, 6.0, 0.0),
         Structure("shed", -30.0, -46.0, 180.0),
+        # Livestock, near the pens they serve. The stable stays on the YARD side of the
+        # road rather than in the paddock: a structure inside a fenced zone gets no road
+        # spur (FarmRoads._destinations), and a stable you cannot drive to is a folly.
+        Structure("stable", 14.0, -6.0, 90.0),
+        Structure("pigsty", 20.0, 20.0, 0.0),
+        Structure("coop", 12.0, 14.0, 90.0),
+        # The cow pen's furniture. Both are trample sources, so the ground around them
+        # goes to mud — see FarmPlan.TRAMPLE_STRUCTURES in the game.
+        Structure("trough", 80.0, -14.0, 0.0),
+        Structure("hay_feeder", 92.0, -26.0, 0.0),
+        # The horse paddock's.
+        Structure("hay_feeder", -40.0, -30.0, 0.0),
+        # Muck and fodder, downwind at the yard's edge.
+        Structure("compost_heap", 44.0, 24.0, 0.0),
+        Structure("haystack", 34.0, 22.0, 0.0),
+        # The two landmarks, deliberately far apart and far from the silo. Both stand on
+        # open ground between the pens, not inside one, so a track reaches each.
+        Structure("water_tower", 66.0, 20.0, 0.0),
+        Structure("windmill", -60.0, 52.0, 0.0),
     ]
     return plan
 
