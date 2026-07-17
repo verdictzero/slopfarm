@@ -23,6 +23,7 @@ func _ready() -> void:
 
 	# (camera pos, look-at target, settle frames, name)
 	var shots := [
+		[Vector3(10, 8, 5), Vector3(45, 6, -28), 90, "farm_buildings"],
 		[Vector3(120, 10, -70), Vector3(210, 8, -20), 90, "factory_approach"],
 		[Vector3(176, 7, -26), Vector3(172, 5, -26), 70, "grinder_gore"],
 		[Vector3(158, 9, -20), Vector3(210, 1, 6), 90, "belt_interior"],

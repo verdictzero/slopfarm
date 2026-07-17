@@ -275,8 +275,30 @@ func _walls(width: float, height: float, depth: float, color: Color) -> void:
 func _barn() -> void:
 	# 18 x 12 on plan, 12.5 to the ridge — a working barn, not a shed with delusions.
 	_walls(18.0, 8.0, 12.0, PAINT.wall_red)
+	# A stone foundation course, so the barn stands on something rather than growing out of grass.
+	_box(Vector3(0, -0.1, 0), Vector3(18.4, 1.4, 12.4), PAINT.stone.darkened(0.04))
 	_gable(Vector3(0, 8.0, 0), 18.0, 12.0, 4.5, PAINT.roof)
-	_box(Vector3(0, 2.4, 6.05), Vector3(5.0, 4.8, 0.3), PAINT.wall_wood)  # door
+	# Eaves trim down both long walls, and a ridge cupola vent with its own little cap — the
+	# silhouette detail that tops a real barn.
+	for z in [-6.2, 6.2]:
+		_box(Vector3(0, 8.0, z), Vector3(18.6, 0.3, 0.4), PAINT.wall_wood.darkened(0.1))
+	_box(Vector3(0, 12.9, 0), Vector3(1.8, 1.7, 1.8), PAINT.wall_red)
+	_box(Vector3(0, 13.1, 0), Vector3(0.5, 0.6, 0.5), PAINT.window)          # louvre
+	_cone(Vector3(0, 13.75, 0), 1.5, 1.1, 4, PAINT.roof)
+	# The big sliding door: an X-brace across the leaf and a track rail above it.
+	_box(Vector3(0, 2.4, 6.05), Vector3(5.0, 4.8, 0.3), PAINT.wall_wood)
+	_rail(Vector3(-2.3, 0.3, 6.22), Vector3(2.3, 4.6, 6.22), 0.12, PAINT.post)
+	_rail(Vector3(2.3, 0.3, 6.22), Vector3(-2.3, 4.6, 6.22), 0.12, PAINT.post)
+	_box(Vector3(0, 5.0, 6.2), Vector3(6.0, 0.25, 0.18), PAINT.metal)
+	# A hayloft door high in the +X gable with a hoist beam jutting out over it.
+	_box(Vector3(9.05, 6.6, 0), Vector3(0.2, 2.0, 1.8), PAINT.wall_wood.darkened(0.12))
+	_box(Vector3(9.9, 9.4, 0), Vector3(1.8, 0.26, 0.26), PAINT.post)
+	# Windows: a pair on each long wall and one high in each gable end.
+	for x in [-6.2, 6.2]:
+		_box(Vector3(x, 4.2, 6.06), Vector3(1.3, 1.5, 0.14), PAINT.window)
+		_box(Vector3(x, 4.2, -6.06), Vector3(1.3, 1.5, 0.14), PAINT.window)
+	for z in [-3.4, 3.4]:
+		_box(Vector3(-9.06, 4.4, z), Vector3(0.14, 1.4, 1.4), PAINT.window)
 
 
 func _shed() -> void:
@@ -292,7 +314,21 @@ func _silo() -> void:
 	var radius := 4.0
 	_cylinder(Vector3(0, (height - FOUNDATION_SINK) * 0.5, 0), radius,
 			height + FOUNDATION_SINK, 12, PAINT.metal)
-	_cone(Vector3(0, height, 0), radius + 0.2, 3.4, 12, PAINT.roof)
+	# Steel hoop bands, the stave seams of a real silo, banded up the drum.
+	for i in 7:
+		_cylinder(Vector3(0, 2.4 + float(i) * 2.8, 0), radius + 0.09, 0.35, 12,
+				PAINT.metal.darkened(0.16))
+	# A capped roof: an eaves ring, the cone, and a breather cap on top.
+	_cylinder(Vector3(0, height + 0.1, 0), radius + 0.28, 0.5, 12, PAINT.metal.darkened(0.1))
+	_cone(Vector3(0, height + 0.3, 0), radius + 0.2, 3.4, 12, PAINT.roof)
+	_cylinder(Vector3(0, height + 3.7, 0), 0.42, 0.9, 8, PAINT.metal)
+	_cone(Vector3(0, height + 4.6, 0), 0.5, 0.5, 8, PAINT.roof)
+	# The unloading chute running the full height of the +Z side, with a ladder up beside it.
+	_box(Vector3(0, height * 0.5, radius + 0.32), Vector3(1.0, height, 0.5), PAINT.metal.darkened(0.08))
+	for lx in [1.1, 1.7]:
+		_box(Vector3(lx, height * 0.5, radius + 0.12), Vector3(0.09, height, 0.09), PAINT.post)
+	for i in int(height / 0.7):
+		_box(Vector3(1.4, 1.2 + float(i) * 0.7, radius + 0.12), Vector3(0.6, 0.08, 0.09), PAINT.post)
 
 
 func _coop() -> void:
@@ -314,17 +350,28 @@ func _well() -> void:
 ## manor with some sheds, which is a different place entirely.
 func _house() -> void:
 	_walls(10.0, 5.5, 8.0, PAINT.wall_cream)
+	_box(Vector3(0, -0.1, 0), Vector3(10.3, 1.1, 8.3), PAINT.stone.darkened(0.05))  # base course
 	_gable(Vector3(0, 5.5, 0), 10.0, 8.0, 3.0, PAINT.roof)
+	_box(Vector3(0, 6.9, 0), Vector3(10.9, 0.26, 0.34), PAINT.roof.darkened(0.25))   # ridge cap
+	# The front door, framed, under a little porch gable carried on two posts.
 	_box(Vector3(0, 1.1, 4.05), Vector3(1.2, 2.2, 0.3), PAINT.wall_wood)
+	_box(Vector3(0, 1.2, 4.12), Vector3(1.55, 2.6, 0.1), PAINT.post)
+	for px in [-0.95, 0.95]:
+		_box(Vector3(px, 1.15, 4.85), Vector3(0.14, 2.3, 0.14), PAINT.post)
+	_gable(Vector3(0, 2.5, 4.85), 2.5, 1.7, 0.7, PAINT.roof)
 	# Two floors of windows, which is the cheapest thing that says "lived in" rather than
-	# "stored in" — every other building here has one storey and no glass.
+	# "stored in" — every other building here has one storey and no glass. Framed, with shutters.
 	for x in [-3.2, 3.2]:
 		for y in [1.6, 4.0]:
 			_box(Vector3(x, y, 4.05), Vector3(1.1, 1.1, 0.16), PAINT.window)
+			_box(Vector3(x, y, 4.11), Vector3(1.35, 1.35, 0.08), PAINT.post)
+			for sx in [-0.72, 0.72]:
+				_box(Vector3(x + sx, y, 4.08), Vector3(0.28, 1.15, 0.09), PAINT.wall_wood)
 		_box(Vector3(x, 2.8, -4.05), Vector3(1.1, 1.1, 0.16), PAINT.window)
 	# The chimney does the real work: at 100m the house is a silhouette, and this is the
-	# only line in it that is not a shed.
+	# only line in it that is not a shed. Topped with a pot.
 	_box(Vector3(-3.8, 7.4, 0), Vector3(0.9, 4.4, 0.9), PAINT.brick)
+	_cylinder(Vector3(-3.8, 9.75, 0), 0.3, 0.7, 6, PAINT.brick.darkened(0.16))
 
 
 # ---- storage and grain ------------------------------------------------------
