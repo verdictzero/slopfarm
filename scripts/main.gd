@@ -14,6 +14,8 @@ const PLAN_POLL_SECONDS := 1.0
 @onready var terrain: TerrainManager = $TerrainManager
 
 var _farm: FarmBuilder
+var _factory: GlueFactory
+var _terrain_grass: TerrainGrass
 var _plan_modified_at: int = 0
 var _plan_poll: float = 0.0
 
@@ -39,6 +41,23 @@ func _ready() -> void:
 	_farm = FarmBuilder.new()
 	_farm.name = "Farm"
 	add_child(_farm)
+
+	# The glue works, east of the farm. Built once — it does not depend on the plan — and it
+	# owns its own patch of ground, which the terrain grass is told to leave bare.
+	_factory = GlueFactory.new()
+	_factory.name = "GlueFactory"
+	add_child(_factory)
+	_factory.setup(terrain, player)
+
+	# Wild grass over the terrain's own grassland, everywhere the farm plan did not author.
+	# Created before the plan loads; _load_farm_plan hands it each new plan so it re-sows
+	# around whatever the designer painted.
+	_terrain_grass = TerrainGrass.new()
+	_terrain_grass.name = "TerrainGrass"
+	add_child(_terrain_grass)
+	_terrain_grass.setup(terrain, player)
+	_terrain_grass.add_exclusion(_factory.footprint())
+
 	_load_farm_plan()
 
 ## Re-reads the plan when the designer saves it. This is what makes the designer a
@@ -61,6 +80,8 @@ func _load_farm_plan() -> void:
 		# standing on plain terrain, not crash the game you were about to test it in.
 		push_warning("farm plan not applied: %s" % plan.error)
 	terrain.apply_farm_plan(plan)
+	if _terrain_grass != null:
+		_terrain_grass.set_plan(plan)
 	var stats := _farm.rebuild(plan, terrain)
 	print("farm plan: %s | %d structures, %d fences, %d animals, %d crop blocks, %d grass blocks, %d nodes" % [
 		"loaded" if plan.loaded else plan.error,
