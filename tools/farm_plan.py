@@ -48,7 +48,7 @@ NATURAL_ZONE = 0
 GROUND_TYPES = ["pasture", "dirt", "road", "crop", "mud"]
 
 # Species the game can spawn into a zone. None means the area is just ground.
-CONTENTS = ["none", "cow", "horse"]
+CONTENTS = ["none", "horse"]
 
 STRUCTURE_TYPES = [
     # The yard.
@@ -213,11 +213,11 @@ def default_plan() -> FarmPlan:
     plan = FarmPlan()
     plan.zones = [
         Zone(1, "Yard", ground="dirt"),
-        Zone(2, "Cow Pen", ground="dirt", contents="cow", count=30, fenced=True),
+        Zone(2, "Horse Pen", ground="dirt", contents="horse", count=30, fenced=True),
         Zone(3, "Horse Paddock", ground="pasture", contents="horse", count=22, fenced=True),
         Zone(4, "Main Road", ground="road"),
         Zone(5, "Wheat Field", ground="crop"),
-        Zone(6, "West Pasture", ground="pasture", contents="cow", count=24, fenced=True),
+        Zone(6, "West Pasture", ground="pasture", contents="horse", count=24, fenced=True),
     ]
 
     def rect(zone_id: int, x0: float, z0: float, x1: float, z1: float) -> None:
@@ -227,7 +227,7 @@ def default_plan() -> FarmPlan:
 
     rect(4, -6, -240, 6, 240)      # road running north-south through the farm
     rect(1, 6, -40, 60, 30)        # yard east of the road
-    rect(2, 66, -40, 130, 10)      # cow pen
+    rect(2, 66, -40, 130, 10)      # horse pen
     rect(3, -120, -60, -12, 40)    # horse paddock west of the road
     rect(5, 6, 40, 120, 150)       # wheat field
     rect(6, -230, 60, -30, 210)    # big grazing pasture, south-west
@@ -257,7 +257,7 @@ def default_plan() -> FarmPlan:
         Structure("stable", 14.0, -6.0, 90.0),
         Structure("pigsty", 20.0, 20.0, 0.0),
         Structure("coop", 12.0, 14.0, 90.0),
-        # The cow pen's furniture. Both are trample sources, so the ground around them
+        # The horse pen's furniture. Both are trample sources, so the ground around them
         # goes to mud — see FarmPlan.TRAMPLE_STRUCTURES in the game.
         Structure("trough", 80.0, -14.0, 0.0),
         Structure("hay_feeder", 92.0, -26.0, 0.0),

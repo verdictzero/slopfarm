@@ -117,7 +117,7 @@ static func _trunk_cells(plan: FarmPlan) -> PackedInt32Array:
 ## Everything a track should reach: every gate, and every structure standing in the open.
 ##
 ## Structures inside a fenced zone are skipped rather than routed to. A trough in the
-## middle of a cow pen does not want a road to it — it wants the pen's gate, which is
+## middle of an animal pen does not want a road to it — it wants the pen's gate, which is
 ## already a destination — and routing to it would drive a gravel track through the herd.
 static func _destinations(plan: FarmPlan) -> Array[Vector2i]:
 	var out: Array[Vector2i] = []

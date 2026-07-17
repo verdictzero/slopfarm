@@ -3,9 +3,9 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://dju7x2a3pkini"
-path.s3tc="res://.godot/imported/horse_texture_0.png-758e596e90346c3c857e63ec7e417f7c.s3tc.ctex"
+path.etc2="res://.godot/imported/horse_texture_0.png-758e596e90346c3c857e63ec7e417f7c.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +15,7 @@ generator_parameters={
 [deps]
 
 source_file="res://models/horse_texture_0.png"
-dest_files=["res://.godot/imported/horse_texture_0.png-758e596e90346c3c857e63ec7e417f7c.s3tc.ctex"]
+dest_files=["res://.godot/imported/horse_texture_0.png-758e596e90346c3c857e63ec7e417f7c.etc2.ctex"]
 
 [params]
 

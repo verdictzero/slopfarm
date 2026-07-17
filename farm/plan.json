@@ -16,9 +16,9 @@
   },
   {
    "id": 2,
-   "name": "Cow Pen",
+   "name": "Horse Pen",
    "ground": "dirt",
-   "contents": "cow",
+   "contents": "horse",
    "count": 30,
    "fenced": true
   },
@@ -50,7 +50,7 @@
    "id": 6,
    "name": "West Pasture",
    "ground": "pasture",
-   "contents": "cow",
+   "contents": "horse",
    "count": 24,
    "fenced": true
   }

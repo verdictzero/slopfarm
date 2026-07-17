@@ -37,7 +37,7 @@ rewriting 65k integers.
 |---|---|
 | **Zones** | Cells store a zone *id*; zones carry the meaning (ground, contents, fenced). Retyping a zone repaints every cell that belongs to it. Zone 0 = "not authored". |
 | **Ground** | `pasture`, `dirt`, `road`, `crop`, `mud` — indices into the ground texture array. Append-only: the integers are in `plan.json`, so reordering silently repaints every zone. |
-| **Contents** | `cow` / `horse` + a count, scattered over that zone's cells (not its bounding box, so an L-shaped pen doesn't put a cow in the notch). They walk: wander to a spot in their zone, amble there, stand a while, repeat. |
+| **Contents** | `horse` + a count, scattered over that zone's cells (not its bounding box, so an L-shaped pen doesn't put an animal in the notch). They walk: wander to a spot in their zone, amble there, stand a while, repeat. |
 | **Growing** | The ground type alone decides what grows — painting a zone *is* saying what it is. A `crop` zone grows wheat from `sprites/wheat_plant_*.png`; a `pasture` zone grows grass tufts generated at startup (`GrassSprites`). Both go through the same scatter: Y-billboarded, one MultiMesh per variant per 16 m block, culled per block by distance. |
 | **Fenced** | Derived, not drawn: a post-and-rail fence is generated along every cell edge where the zone meets something else, merged to one mesh per zone — gate included. |
 | **Structures** | Points with a yaw, all procedural geometry — there is no building art. One merged mesh each, so one draw call each, and a trimesh body off that same mesh so you can't walk through them. The yard: `house`, `barn`, `shed`, `silo`, `coop`, `well`. Grain: `granary`, `corn_crib`, `grain_bin`. Machinery and livestock: `machine_shed`, `stable`, `pigsty`. Landmarks: `windmill`, `water_tower`. Clutter: `trough`, `haystack`, `hay_feeder`, `compost_heap`, `fuel_tank`, `log_pile`. |
@@ -139,7 +139,7 @@ so any gradient finer than a palette step is invisible by construction.** Smooth
 that resolution is never a trade-off here — it is just cost.
 
 The blend is what makes this survive contact with a 200×150 m grazing field: forcing every
-animal zone to mud would turn West Pasture into a bog with cows in it. Grass thins by the
+animal zone to mud would turn West Pasture into a bog with animals in it. Grass thins by the
 same field — the probability a tuft is skipped *is* the trample value, so the grass fades
 out exactly as the mud fades in, and a hard threshold would draw a visible contour around
 every gate.
@@ -153,11 +153,11 @@ Everything about the walk is measured off the one clip the models ship with
 - It has **no root motion**, so the script moves the node and the clip does the legs.
 - It **doesn't loop** as imported (`LOOP_NONE`). Left alone it plays once and freezes
   mid-stride, which is what the farm shipped doing.
-- **Stride is 0.53 m/cycle (cow) and 0.91 m (horse)**, measured as the fore-aft excursion
+- **Stride is 0.91 m/cycle for the horse**, measured as the fore-aft excursion
   of the feet in world space. Walking faster than stride/cycle *is* moonwalking, so speed
   and playback rate are derived from each other, never picked separately.
 - There's no idle pose, so **standing** means holding the frame where all four feet are
-  down: t=0.200 (cow), t=0.183 (horse).
+  down: t=0.183 for the horse.
 
 **An animating skeleton is the most expensive thing on the farm** — ~0.15 ms each. 76 of
 them measured 18.06 ms/frame against 12.50 ms for 38, while the entire wheat field cost
@@ -206,11 +206,14 @@ different road.
 this changed. Neither models the trample blend or the derived tracks, so both now describe
 the ground's base rules rather than every pixel of it.)
 
-The animals were also unusable as shipped and are fixed at import, not in code:
-`nodes/root_scale` (cow 90, horse 190 — they are authored at different scales, so there is
-no one number; measured against a 1.5 m reference post) and `process/size_limit=256` on
-their textures. Those textures are 4096² and 8192², which cost **53 MB of VRAM** in a game
-that renders at 640×360 with a 512-colour palette and 32×32 ground textures.
+The horse was also unusable as shipped and is fixed at import, not in code:
+`nodes/root_scale` 190 (authored small; measured against a 1.5 m reference post) and
+`process/size_limit=256` on its texture — which shipped as an 8192² PNG embedded in the
+`.glb`, 49 MB of dead weight in a game that renders at 640×360 with a 512-colour palette and
+32×32 ground textures. `tools/glb_externalize_textures.py` extracts that texture to a 256²
+external sidecar and strips the embedded copy (`horse.glb`: 49 MB → 265 KB), so the clamp is
+belt-and-suspenders rather than load-bearing. The logo and meat grinder models got the same
+treatment.
 
 ## Ground cover
 
@@ -270,13 +273,13 @@ Everything upstream of the blit asks for nearest explicitly — the ground
 (`filter_nearest_mipmap_anisotropic`), the zone and trample maps, both dither fetches, and
 the crop/grass billboards (`NEAREST_WITH_MIPMAPS`).
 
-**The animals were smoothed for months.** `cow.glb` and `horse.glb` came out of the importer
+**The animals were smoothed for months.** `horse.glb` came out of the importer
 at `LINEAR_MIPMAP` — the only linear-filtered art in the game. It hid because texture
 filtering on a 3D material is a **material** property, not an import setting, so it never
 appears in a `.import` file next to the `compress/mode` and `mipmaps/generate` lines you'd
-actually think to audit. `FarmBuilder._force_pixel_look` drags them into line at
-instantiate; the materials come off the `.glb` shared, so it reaches every animal of the
-species, the same way the walk's `LOOP_LINEAR` fix does.
+actually think to audit. `FarmBuilder._force_pixel_look` drags it into line at
+instantiate; the materials come off the `.glb` shared, so it reaches every animal,
+the same way the walk's `LOOP_LINEAR` fix does.
 
 The moral is the same one `lut_512.png`'s hand-written `.import` exists to enforce, one
 level further in: **the importer's defaults are not this game's defaults**, and the settings

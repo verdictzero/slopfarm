@@ -676,7 +676,7 @@ func _add_animals(plan: FarmPlan, zone_id: int, species: String, count: int) -> 
 	var placed := 0
 	for i in count:
 		# Pick a cell at random rather than a random point in the bounding box: a zone
-		# can be any shape, and an L-shaped pen must not put a cow in the notch.
+		# can be any shape, and an L-shaped pen must not put an animal in the notch.
 		var at := cells[_rng.randi_range(0, cells.size() - 1)]
 		at += Vector2(_rng.randf_range(-0.8, 0.8), _rng.randf_range(-0.8, 0.8))
 		var node := packed.instantiate() as Node3D
@@ -703,10 +703,10 @@ func _add_animals(plan: FarmPlan, zone_id: int, species: String, count: int) -> 
 ## audited. That is the trap the README's note about lut_512.png's import defeats, one
 ## level further in.
 ##
-## Culling is pinned for the same reason even though it changes nothing today: cow.glb and
-## horse.glb happen to arrive CULL_DISABLED because their glTF sets `doubleSided`, which is
-## the asset's opinion, not ours — exactly the kind of incidental default that was linear
-## last week. tools/probe_filter.gd audits both.
+## Culling is pinned for the same reason even though it changes nothing today: horse.glb
+## happens to arrive CULL_DISABLED because its glTF sets `doubleSided`, which is the
+## asset's opinion, not ours — exactly the kind of incidental default that was linear
+## last week. tools/probe_filter.gd audits it.
 ##
 ## Materials come off the .glb as SHARED resources, so this reaches every animal of the
 ## species — the same reason the walk's LOOP_LINEAR fix only has to be applied once (see

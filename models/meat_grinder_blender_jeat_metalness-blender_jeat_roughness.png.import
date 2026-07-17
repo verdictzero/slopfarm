@@ -3,9 +3,9 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cnq4ecwe31asj"
-path.s3tc="res://.godot/imported/meat_grinder_blender_jeat_metalness-blender_jeat_roughness.png-451b8552b2d980122f21af61b3d20bf6.s3tc.ctex"
+path.etc2="res://.godot/imported/meat_grinder_blender_jeat_metalness-blender_jeat_roughness.png-451b8552b2d980122f21af61b3d20bf6.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +15,7 @@ generator_parameters={
 [deps]
 
 source_file="res://models/meat_grinder_blender_jeat_metalness-blender_jeat_roughness.png"
-dest_files=["res://.godot/imported/meat_grinder_blender_jeat_metalness-blender_jeat_roughness.png-451b8552b2d980122f21af61b3d20bf6.s3tc.ctex"]
+dest_files=["res://.godot/imported/meat_grinder_blender_jeat_metalness-blender_jeat_roughness.png-451b8552b2d980122f21af61b3d20bf6.etc2.ctex"]
 
 [params]
 

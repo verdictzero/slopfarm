@@ -12,27 +12,26 @@ class_name FarmAnimal
 ##   the two fighting each other.
 ## - It does NOT loop (loop_mode = LOOP_NONE as imported). Left alone it plays once and
 ##   freezes mid-stride, which is what the farm shipped doing.
-## - Stride is 0.53 m/cycle for a cow and 0.91 m for a horse, measured as the fore-aft
-##   excursion of the feet on the unscaled model. Walking faster than stride/cycle is what
-##   moonwalking IS, so speed and playback rate are derived from each other rather than
-##   picked independently.
+## - Stride is 0.91 m/cycle for a horse, measured as the fore-aft excursion of the feet
+##   on the unscaled model. Walking faster than stride/cycle is what moonwalking IS, so
+##   speed and playback rate are derived from each other rather than picked independently.
 ## - There is no idle pose to stand in, so standing means holding the frame where all
-##   four feet are down: t=0.200 for a cow, t=0.183 for a horse.
+##   four feet are down: t=0.183 for a horse.
 
 ## Metres advanced per cycle of the clip, measured per species on the unscaled model.
 ## Playback rate is scaled from this, so any speed stays foot-locked.
-const STRIDE := {&"cow": 0.53, &"horse": 0.91}
+const STRIDE := {&"horse": 0.91}
 ## Display size, as a multiple of the model's native size. The clip's foot excursion is in
-## model space, so this multiplies into STRIDE: a 3x cow whose feet still only claim 0.53m
-## a cycle skates. Speed follows stride, so a bigger animal also covers ground faster,
-## which is what long legs do.
-const SCALE := {&"cow": 3.0, &"horse": 2.0}
+## model space, so this multiplies into STRIDE: a 2x horse whose feet still only claim
+## 0.91m a cycle skates. Speed follows stride, so a bigger animal also covers ground
+## faster, which is what long legs do.
+const SCALE := {&"horse": 2.0}
 ## The frame where all four feet are planted — the only pose worth stopping on.
-const STAND_FRAME := {&"cow": 0.200, &"horse": 0.183}
+const STAND_FRAME := {&"horse": 0.183}
 
 ## How far an animal will wander from where it is before picking somewhere else.
 const ROAM_RANGE := 14.0
-const TURN_RATE := 1.6          # radians/sec — a cow does not pivot on the spot
+const TURN_RATE := 1.6          # radians/sec — a horse does not pivot on the spot
 const ARRIVED := 1.2
 
 ## Past this, an animal stops animating and stops walking.
@@ -42,7 +41,7 @@ const ARRIVED := 1.2
 ## field costs less. (An earlier measurement claimed animals were free — that was taken
 ## while a LOOP_NONE bug had them frozen after one second, so nothing was skinning.)
 ##
-## Dormant animals hold their pose and simply stop being simulated. At 55m a cow is a
+## Dormant animals hold their pose and simply stop being simulated. At 55m a horse is a
 ## few pixels tall and the fog is closing in, so a frozen stride is not visible; the
 ## herd you can actually see is always live.
 const ACTIVE_RANGE := 55.0
@@ -66,7 +65,7 @@ var _rng := RandomNumberGenerator.new()
 
 ## `cells` are the world positions of the zone this animal belongs to; it will not leave
 ## them. Passing the zone's cells rather than a radius is what keeps an L-shaped pen from
-## putting a cow in the notch.
+## putting an animal in the notch.
 func setup(kind: StringName, cells: PackedVector2Array, terrain: TerrainManager,
 		rng_seed: int, watch: Node3D) -> void:
 	species = kind

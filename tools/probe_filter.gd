@@ -22,7 +22,7 @@ func _init() -> void:
 		var mat := m.material as BaseMaterial3D
 		print("grass billboard: filter=%s cull=%s" % [FILTERS[mat.texture_filter], CULL[mat.cull_mode]])
 		break
-	for species in ["cow", "horse"]:
+	for species in ["horse"]:
 		var node := (load("res://models/%s.glb" % species) as PackedScene).instantiate()
 		builder._force_pixel_look(node)
 		_walk(node, species)

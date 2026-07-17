@@ -194,7 +194,7 @@ const TRAMPLE_STRUCTURES := ["trough", "hay_feeder"]
 ## a mud bath. Three sources, because these are the three places stock stand rather than
 ## graze: the gate they queue at, the troughs they crowd, and the fence line they walk.
 ## Everything between stays pasture, which is what keeps West Pasture reading as a 200x150m
-## field rather than a bog with cows in it.
+## field rather than a bog with animals in it.
 ##
 ## The noise modulates the RADIUS, not the result. A clean radial falloff quantises to
 ## visible concentric rings under the Bayer dither — the palette has ~4 usable steps across
