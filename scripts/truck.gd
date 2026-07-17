@@ -38,6 +38,9 @@ var _mat: StandardMaterial3D
 var _kit := MeshKit.new()
 var _camera: Camera3D
 var _driver: Node3D
+## The driver's on-screen controls, if driving on a phone — the truck reads the thumb-stick for
+## throttle and steering. Null when driving with a keyboard.
+var _touch: TouchControls
 
 var _speed := 0.0
 var _heading := 0.0
@@ -76,8 +79,10 @@ func is_driven() -> bool:
 
 
 ## Take the wheel. The truck's chase camera becomes current; the caller hides/parks its own view.
-func enter(driver: Node3D) -> void:
+## `touch` is the driver's on-screen controls on a phone, or null for keyboard driving.
+func enter(driver: Node3D, touch: TouchControls = null) -> void:
 	_driver = driver
+	_touch = touch
 	_speed = 0.0
 	if _camera != null:
 		_place_camera(0.0, true)
@@ -112,6 +117,12 @@ func _drive(delta: float) -> void:
 		steer_in += 1.0
 	if Input.is_physical_key_pressed(KEY_D):
 		steer_in -= 1.0
+	# The touch thumb-stick drives too: push up to go, down to brake/reverse, left/right to steer.
+	if _touch != null:
+		throttle += _touch.move_vector.y
+		steer_in -= _touch.move_vector.x
+	throttle = clampf(throttle, -1.0, 1.0)
+	steer_in = clampf(steer_in, -1.0, 1.0)
 	_steer = lerpf(_steer, steer_in, clampf(delta * 8.0, 0.0, 1.0))
 
 	if throttle > 0.0:

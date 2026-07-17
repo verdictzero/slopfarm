@@ -13,6 +13,8 @@ class_name Player
 @export var jump_velocity: float = 7.0
 @export var gravity: float = 22.0
 @export var mouse_sensitivity: float = 0.0025
+## Look sensitivity for a touch drag, in radians per screen unit (the 640x360 virtual space).
+@export var touch_look_sensitivity: float = 0.006
 ## Camera far plane — pushed out for the long draw distance.
 @export var camera_far: float = 5000.0
 
@@ -85,6 +87,9 @@ var _money_label: Label
 var _glue_label: Label
 var _prompt_label: Label
 
+## On-screen touch controls, present only on touch devices (phones). Null on desktop.
+var _touch: TouchControls
+
 ## Where R sends the player, and the terrain to rebuild solid ground around it on the way.
 ## Both are set by main.gd once the world exists; safe to leave unset (R just no-ops).
 var spawn_point: Vector3
@@ -94,11 +99,36 @@ var terrain: TerrainManager
 func _ready() -> void:
 	camera.far = camera_far
 	_tune_collision()
-	# Skip mouse capture when running with no display (headless validation).
-	if DisplayServer.get_name() != "headless":
+	# On a phone the mouse is meaningless — skip capture and raise the on-screen controls
+	# instead. On desktop, capture the mouse as before (but never when headless).
+	if _is_mobile():
+		_spawn_touch_controls()
+	elif DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_spawn_wand()
 	_spawn_crosshair()
+
+
+## Whether this build should show touch controls: a real touch device, or an explicitly mobile
+## export (so it is right in the APK even on a device that also reports a mouse).
+func _is_mobile() -> bool:
+	# SLOPFARM_TOUCH forces the touch controls on for previewing them on a desktop build.
+	return OS.has_feature("mobile") or DisplayServer.is_touchscreen_available() \
+			or OS.has_environment("SLOPFARM_TOUCH")
+
+
+## Raises the on-screen controls on its own CanvasLayer (below the dither post-process at 100,
+## above the HUD at 50) and wires each button to the matching action.
+func _spawn_touch_controls() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 60
+	add_child(layer)
+	_touch = TouchControls.new()
+	layer.add_child(_touch)
+	_touch.hit_pressed.connect(_primary_action)
+	_touch.interact_pressed.connect(_interact)
+	_touch.truck_pressed.connect(_toggle_truck)
+	_touch.respawn_pressed.connect(_respawn)
 
 
 ## Keeps the capsule from snagging. Two parts: a slightly fatter safe margin and a longer floor
@@ -135,13 +165,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			return
 		if button.button_index == MOUSE_BUTTON_LEFT:
-			# Left click swings the wand — or, when carrying a cow, punts it. Idle behind the wheel.
-			if _driving != null:
-				pass
-			elif _carried != null and is_instance_valid(_carried):
-				_throw()
-			else:
-				_attack()
+			_primary_action()
 		elif button.button_index == MOUSE_BUTTON_RIGHT:
 			_interact()
 	elif event is InputEventKey and event.pressed and not event.echo:
@@ -156,7 +180,25 @@ func _unhandled_input(event: InputEvent) -> void:
 			_respawn()
 
 
+## The primary action (left-click, or the touch HIT button): swing the wand, or punt a carried
+## cow. Idle behind the wheel.
+func _primary_action() -> void:
+	if _driving != null:
+		return
+	if _carried != null and is_instance_valid(_carried):
+		_throw()
+	else:
+		_attack()
+
+
 func _process(delta: float) -> void:
+	# Apply any touch look-drag accumulated this frame, mirroring the mouse look.
+	if _touch != null:
+		var look := _touch.take_look()
+		if look != Vector2.ZERO:
+			rotate_y(-look.x * touch_look_sensitivity)
+			_pitch = clampf(_pitch - look.y * touch_look_sensitivity, -1.4, 1.4)
+			camera.rotation.x = _pitch
 	# Swing the wand: pitch it down through an arc and settle it back to rest.
 	if _wand != null:
 		if _swing > 0.0:
@@ -213,9 +255,10 @@ func _physics_process(delta: float) -> void:
 			return
 		_driving = null
 
+	var jump := Input.is_physical_key_pressed(KEY_SPACE) or (_touch != null and _touch.jump_held)
 	if not is_on_floor():
 		velocity.y -= gravity * delta
-	elif Input.is_physical_key_pressed(KEY_SPACE):
+	elif jump:
 		velocity.y = jump_velocity
 
 	var input := Vector2.ZERO
@@ -227,9 +270,16 @@ func _physics_process(delta: float) -> void:
 		input.x -= 1.0
 	if Input.is_physical_key_pressed(KEY_D):
 		input.x += 1.0
-	input = input.normalized()
+	# Fold in the touch thumb-stick (its y is forward-positive; ours is forward-negative).
+	if _touch != null:
+		input.x += _touch.move_vector.x
+		input.y -= _touch.move_vector.y
+	# Clamp rather than normalize, so a half-pushed stick still walks at half pace.
+	if input.length() > 1.0:
+		input = input.normalized()
 
-	var speed := sprint_speed if Input.is_physical_key_pressed(KEY_SHIFT) else walk_speed
+	var sprinting := Input.is_physical_key_pressed(KEY_SHIFT) or (_touch != null and _touch.sprint)
+	var speed := sprint_speed if sprinting else walk_speed
 	var direction := (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
 	velocity.x = direction.x * speed
 	velocity.z = direction.z * speed
@@ -376,7 +426,7 @@ func _toggle_truck() -> void:
 			best = truck
 	if best != null:
 		_driving = best
-		best.enter(self)
+		best.enter(self, _touch)
 
 
 ## Left-click while carrying: punt the cow. Feeding still wins if you are right at the intake,

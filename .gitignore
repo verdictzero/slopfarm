@@ -20,3 +20,6 @@ __pycache__/
 
 # Atomic-save temp from the farm designer
 *.json.tmp
+
+# Exported build artifacts (APKs etc.)
+build/
