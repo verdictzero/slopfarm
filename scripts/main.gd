@@ -33,6 +33,10 @@ func _ready() -> void:
 	var spawn_z := 40.0
 	var spawn_height := terrain.height_at(spawn_x, spawn_z) + 3.0
 	player.global_position = Vector3(spawn_x, spawn_height, spawn_z)
+	# Remember where we put them, and hand over the terrain, so the R respawn can rebuild
+	# solid ground here and warp the player back if they ever wedge in the scenery.
+	player.spawn_point = player.global_position
+	player.terrain = terrain
 
 	terrain.player = player
 	# Build solid ground around the spawn before the first physics frame.
