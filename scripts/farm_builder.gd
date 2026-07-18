@@ -614,6 +614,13 @@ func _log_pile() -> void:
 
 # ---- fences -----------------------------------------------------------------
 
+## Fence collision box per segment: taller than the top rail, a good bit thicker than the 0.16
+## posts (so the capsule is stopped well before it can reach a post to wedge on), and its length
+## padded so consecutive runs overlap at the corners and leave no gap to snag.
+const FENCE_COL_H := 1.9
+const FENCE_COL_THICK := 0.55
+const FENCE_COL_PAD := 0.35
+
 ## One merged mesh per fenced zone: a pen's fence is ~100 short segments, and that has to
 ## be one draw call, not a hundred. The gate is part of that same mesh — it is a hole in
 ## this fence and a thing hung in the hole, so splitting it out would buy a draw call and
@@ -642,8 +649,32 @@ func _add_fence(plan: FarmPlan, zone_id: int) -> bool:
 	mesh_instance.mesh = _commit()
 	mesh_instance.material_override = _material
 	add_child(mesh_instance)
-	_add_collision(mesh_instance)
+	_fence_collision(mesh_instance, edges, gate_edges)
 	return true
+
+
+## Fence collision: one padded box wall per segment, NOT a trimesh off the posts and rails. A
+## trimesh models every thin post and the gaps between the rails, so the player's capsule wedges
+## between a post and a rail or snags a corner and sticks. A solid box per run — tall and a bit
+## thicker than the posts, its ends overlapping the next run's — is a smooth wall you just slide
+## along, and it leaves the gate gap open exactly like the mesh does.
+func _fence_collision(mesh_instance: MeshInstance3D, edges: Array, gate_edges: Array) -> void:
+	var body := StaticBody3D.new()
+	for edge in edges:
+		if edge in gate_edges:
+			continue
+		var a: Vector2 = edge[0]
+		var b: Vector2 = edge[1]
+		var mid := (a + b) * 0.5
+		var gy := _terrain.height_at(mid.x, mid.y)
+		var box := BoxShape3D.new()
+		box.size = Vector3(a.distance_to(b) + FENCE_COL_PAD, FENCE_COL_H, FENCE_COL_THICK)
+		var cs := CollisionShape3D.new()
+		cs.shape = box
+		cs.transform = Transform3D(Basis(Vector3.UP, -atan2(b.y - a.y, b.x - a.x)),
+				Vector3(mid.x, gy + FENCE_COL_H * 0.5, mid.y))
+		body.add_child(cs)
+	mesh_instance.add_child(body)
 
 
 ## Solid geometry from the mesh that was just built. Without this a barn is a hologram —
