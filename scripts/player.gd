@@ -94,10 +94,13 @@ var glue: int = 0
 var money: int = 0
 var _driving: Truck
 
-## HUD.
-var _money_label: Label
-var _glue_label: Label
+## HUD. The DMG capsule readouts and the main menu live on the GBUI layer; the crosshair and the
+## contextual prompt stay on their own layer under it.
+var _gbui: GBUI
 var _prompt_label: Label
+var _menu_open := false
+## Rising-edge memory for D-pad/stick menu navigation (up = -1, down = +1).
+var _nav_prev := 0
 
 ## On-screen touch controls, present only on touch devices (phones). Null on desktop.
 var _touch: TouchControls
@@ -152,6 +155,7 @@ func _spawn_gb_shell_input() -> void:
 	_touch.interact_pressed.connect(_interact)
 	_touch.truck_pressed.connect(_toggle_truck)
 	_touch.respawn_pressed.connect(_respawn)
+	_touch.menu_pressed.connect(_toggle_menu)
 
 
 ## Called by the native portrait console (shell.gd) to hand us the input source it built outside the
@@ -163,6 +167,7 @@ func set_input_source(src: TouchControls) -> void:
 	src.interact_pressed.connect(_interact)
 	src.truck_pressed.connect(_toggle_truck)
 	src.respawn_pressed.connect(_respawn)
+	src.menu_pressed.connect(_toggle_menu)
 
 
 ## Raises the on-screen controls on its own CanvasLayer, ABOVE the dither post-process (100) so
@@ -178,6 +183,7 @@ func _spawn_touch_controls() -> void:
 	_touch.interact_pressed.connect(_interact)
 	_touch.truck_pressed.connect(_toggle_truck)
 	_touch.respawn_pressed.connect(_respawn)
+	_touch.menu_pressed.connect(_toggle_menu)
 
 
 ## Keeps the capsule from snagging. Two parts: a slightly fatter safe margin and a longer floor
@@ -196,10 +202,25 @@ func _tune_collision() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	# Mouse-look and click-to-capture belong to the plain desktop scheme only. When an on-screen
-	# input layer is present — the phone touch pad or the Game Boy shell — that pad drives the
-	# camera, and grabbing pointer-lock here would fight the shell, so the mouse is left alone.
-	if _touch == null:
+	# While the menu is up it owns the keyboard: up/down move the selection, Enter/Space confirm,
+	# Esc/Tab/Backspace close. (Pad and web-shell navigation come per-frame from move_vector.)
+	if _menu_open and event is InputEventKey and event.pressed and not event.echo:
+		match (event as InputEventKey).physical_keycode:
+			KEY_UP, KEY_W:
+				_gbui.nav(-1)
+			KEY_DOWN, KEY_S:
+				_gbui.nav(1)
+			KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+				_gbui.activate()
+			KEY_TAB, KEY_ESCAPE, KEY_BACKSPACE:
+				_toggle_menu()
+		return
+
+	# Mouse-look and click-to-capture belong to the plain desktop scheme only, and never while the
+	# menu is up. When an on-screen input layer is present — the phone touch pad or the Game Boy
+	# shell — that pad drives the camera, and grabbing pointer-lock here would fight the shell, so
+	# the mouse is left alone.
+	if _touch == null and not _menu_open:
 		if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			var motion := event as InputEventMouseMotion
 			rotate_y(-motion.relative.x * mouse_sensitivity)
@@ -236,11 +257,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif key == KEY_R:
 			# The failsafe: warp back to the start if you ever get wedged in the scenery.
 			_respawn()
+		elif key == KEY_TAB:
+			# Raise the DMG main menu (Start, on the console pad and web shell).
+			_toggle_menu()
 
 
 ## The primary action (left-click, or the touch HIT button): swing the wand, or punt a carried
 ## cow. Idle behind the wheel.
 func _primary_action() -> void:
+	# With the menu up, HIT (A / left-click) confirms the selected entry instead of swinging.
+	if _menu_open:
+		_gbui.activate()
+		return
 	if _driving != null:
 		return
 	if _carried != null and is_instance_valid(_carried):
@@ -249,7 +277,42 @@ func _primary_action() -> void:
 		_attack()
 
 
+## START (console pill / web START / Tab): raise or dismiss the DMG main menu. Opening it drops any
+## mouse capture and freezes the player until it is closed.
+func _toggle_menu() -> void:
+	if _gbui == null:
+		return
+	_menu_open = not _menu_open
+	_gbui.toggle_menu()
+	_nav_prev = 0
+	if _menu_open and _touch == null and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## Result of confirming a menu entry: the two action rows do something, the two info rows just stay
+## on screen.
+func _on_menu_item(id: String) -> void:
+	match id:
+		"RESPAWN":
+			_toggle_menu()
+			_respawn()
+		"RESUME":
+			_toggle_menu()
+
+
 func _process(delta: float) -> void:
+	# While the menu is open the pad/stick drives the selection instead of the camera: push up/down
+	# past a deadzone to step one entry, released before it repeats (rising-edge only).
+	if _menu_open:
+		if _touch != null:
+			_touch.take_look()   # drain look so it does not snap the camera when the menu closes
+			var v := _touch.move_vector.y
+			var dir := 1 if v > 0.5 else (-1 if v < -0.5 else 0)
+			if dir != 0 and dir != _nav_prev:
+				_gbui.nav(-dir)   # stick up (+y forward) moves the selection up (toward index 0)
+			_nav_prev = dir
+		_update_hud()
+		return
 	# Apply any touch look-drag accumulated this frame, mirroring the mouse look.
 	if _touch != null:
 		var look := _touch.take_look()
@@ -281,11 +344,12 @@ func _process(delta: float) -> void:
 
 ## Refreshes the money/glue readout and the contextual prompt for whatever is in reach.
 func _update_hud() -> void:
-	if _money_label == null:
+	if _gbui == null:
 		return
-	_money_label.text = "$ %d" % money
-	_glue_label.text = "glue: %d sacks" % glue
-	_prompt_label.text = _context_prompt()
+	_gbui.set_money(money)
+	_gbui.set_glue(glue)
+	# The contextual prompt is hidden behind the menu while it is open.
+	_prompt_label.text = "" if _menu_open else _context_prompt()
 
 
 func _context_prompt() -> String:
@@ -314,6 +378,15 @@ func _context_prompt() -> String:
 
 
 func _physics_process(delta: float) -> void:
+	# The menu freezes play: bleed off horizontal motion and let gravity settle the player, but take
+	# no move/jump input while it is up.
+	if _menu_open:
+		velocity.x = move_toward(velocity.x, 0.0, 40.0 * delta)
+		velocity.z = move_toward(velocity.z, 0.0, 40.0 * delta)
+		if not is_on_floor():
+			velocity.y -= gravity * delta
+		move_and_slide()
+		return
 	# While driving, hand movement to the truck and ride along on top of it. The player is the
 	# world's streaming anchor, so pinning it to the truck is what keeps terrain, grass and trees
 	# building around the truck as it drives off toward the towns.
@@ -483,6 +556,10 @@ func _attack() -> void:
 ## intake if you are on it, otherwise set it down. Otherwise, in order: load finished glue at the
 ## factory dock, sell your load at a town market, or grab the ragdoll you are looking at.
 func _interact() -> void:
+	# With the menu up, USE (B / E / right-click) backs out of it.
+	if _menu_open:
+		_toggle_menu()
+		return
 	if _driving != null:
 		return
 	if _carried != null and is_instance_valid(_carried):
@@ -733,7 +810,7 @@ func _spawn_crosshair() -> void:
 	layer.layer = 110
 	add_child(layer)
 	var dot := ColorRect.new()
-	dot.color = Color(0.9, 0.9, 0.9, 0.6)
+	dot.color = Color(0.808, 0.886, 0.478, 0.75)   # lit_hi green
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Anchored to the screen centre and given a fixed 4x4 offset box, so it stays put at any
 	# window size rather than depending on a preset's kept offsets.
@@ -747,48 +824,48 @@ func _spawn_crosshair() -> void:
 	dot.offset_bottom = 2.0
 	layer.add_child(dot)
 
+	# The DMG LCD interface (capsule MONEY/GLUE readouts + the main menu) on its own layer, above
+	# the dither and this crosshair. It owns the pixel font, which the prompt/hint borrow.
+	_gbui = GBUI.new()
+	add_child(_gbui)
+	_gbui.glue_price = GLUE_PRICE
+	_gbui.item_activated.connect(_on_menu_item)
+	var gb_font := _gbui.get_font()
+
 	# The respawn failsafe, spelled out in the corner so "press R if you get stuck" does not
 	# have to be documented anywhere the player will not see it.
 	var hint := Label.new()
 	hint.text = "R  respawn"
-	hint.modulate = Color(0.9, 0.9, 0.9, 0.45)
+	hint.modulate = Color(0.808, 0.886, 0.478, 0.7)   # lit_hi green
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hint.anchor_left = 0.0
 	hint.anchor_top = 1.0
 	hint.anchor_right = 0.0
 	hint.anchor_bottom = 1.0
 	hint.offset_left = 6.0
-	hint.offset_top = -22.0
+	hint.offset_top = -18.0
 	hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	if gb_font != null:
+		hint.add_theme_font_override("font", gb_font)
+		hint.add_theme_font_size_override("font_size", 8)
 	layer.add_child(hint)
 
-	# Money and current glue load, top-left.
-	_money_label = Label.new()
-	_money_label.modulate = Color(0.95, 0.9, 0.5)
-	_money_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_money_label.offset_left = 8.0
-	_money_label.offset_top = 6.0
-	layer.add_child(_money_label)
-
-	_glue_label = Label.new()
-	_glue_label.modulate = Color(0.85, 0.85, 0.9)
-	_glue_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_glue_label.offset_left = 8.0
-	_glue_label.offset_top = 24.0
-	layer.add_child(_glue_label)
-
-	# Context prompt, just under the crosshair.
+	# Context prompt, just under the crosshair — pixel font, bright DMG green so it reads over the
+	# mid-tone world.
 	_prompt_label = Label.new()
-	_prompt_label.modulate = Color(0.95, 0.95, 0.95, 0.85)
+	_prompt_label.modulate = Color(0.808, 0.886, 0.478)   # lit_hi green
 	_prompt_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_prompt_label.anchor_left = 0.5
 	_prompt_label.anchor_right = 0.5
 	_prompt_label.anchor_top = 0.5
 	_prompt_label.anchor_bottom = 0.5
-	_prompt_label.offset_left = -160.0
-	_prompt_label.offset_right = 160.0
-	_prompt_label.offset_top = 24.0
+	_prompt_label.offset_left = -170.0
+	_prompt_label.offset_right = 170.0
+	_prompt_label.offset_top = 20.0
+	if gb_font != null:
+		_prompt_label.add_theme_font_override("font", gb_font)
+		_prompt_label.add_theme_font_size_override("font_size", 8)
 	layer.add_child(_prompt_label)
 
 
