@@ -3,9 +3,10 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://d151sayt6f8wn"
+path.s3tc="res://.godot/imported/meat_grinder_blender_jeat_diffuse.png-e507ab7dfd684051da54c49ec4bcd6e7.s3tc.ctex"
 path.etc2="res://.godot/imported/meat_grinder_blender_jeat_diffuse.png-e507ab7dfd684051da54c49ec4bcd6e7.etc2.ctex"
 metadata={
-"imported_formats": ["etc2_astc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://models/meat_grinder_blender_jeat_diffuse.png"
-dest_files=["res://.godot/imported/meat_grinder_blender_jeat_diffuse.png-e507ab7dfd684051da54c49ec4bcd6e7.etc2.ctex"]
+dest_files=["res://.godot/imported/meat_grinder_blender_jeat_diffuse.png-e507ab7dfd684051da54c49ec4bcd6e7.s3tc.ctex", "res://.godot/imported/meat_grinder_blender_jeat_diffuse.png-e507ab7dfd684051da54c49ec4bcd6e7.etc2.ctex"]
 
 [params]
 

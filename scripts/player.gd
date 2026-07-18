@@ -99,9 +99,12 @@ var terrain: TerrainManager
 func _ready() -> void:
 	camera.far = camera_far
 	_tune_collision()
-	# On a phone the mouse is meaningless — skip capture and raise the on-screen controls
-	# instead. On desktop, capture the mouse as before (but never when headless).
-	if _is_mobile():
+	# Pick the input scheme. In the Game Boy web shell the on-screen pad drives the game (and the
+	# mouse is left alone so it never fights the shell). On a phone, raise the in-engine touch
+	# controls. On desktop, capture the mouse as before (but never when headless).
+	if _use_gb_shell():
+		_spawn_gb_shell_input()
+	elif _is_mobile():
 		_spawn_touch_controls()
 	elif DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -115,6 +118,24 @@ func _is_mobile() -> bool:
 	# SLOPFARM_TOUCH forces the touch controls on for previewing them on a desktop build.
 	return OS.has_feature("mobile") or DisplayServer.is_touchscreen_available() \
 			or OS.has_environment("SLOPFARM_TOUCH")
+
+
+## Whether input comes from the Game Boy HTML shell. True for any web export (the web build only
+## ever runs inside that shell); SLOPFARM_GBSHELL forces it on for previewing on a desktop build.
+func _use_gb_shell() -> bool:
+	return OS.has_feature("web") or OS.has_environment("SLOPFARM_GBSHELL")
+
+
+## Reads the shell's on-screen pad through GameBoyUI and drives the player through the same
+## surface the touch controls use, so nothing downstream (movement, the truck, the actions) has
+## to know the difference. No CanvasLayer: it draws nothing.
+func _spawn_gb_shell_input() -> void:
+	_touch = GBShellInput.new()
+	add_child(_touch)
+	_touch.hit_pressed.connect(_primary_action)
+	_touch.interact_pressed.connect(_interact)
+	_touch.truck_pressed.connect(_toggle_truck)
+	_touch.respawn_pressed.connect(_respawn)
 
 
 ## Raises the on-screen controls on its own CanvasLayer, ABOVE the dither post-process (100) so
@@ -147,28 +168,37 @@ func _tune_collision() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		var motion := event as InputEventMouseMotion
-		rotate_y(-motion.relative.x * mouse_sensitivity)
-		_pitch = clampf(_pitch - motion.relative.y * mouse_sensitivity, -1.4, 1.4)
-		camera.rotation.x = _pitch
-	elif event.is_action_pressed(&"ui_cancel"):
-		# Toggle the mouse capture (Esc).
-		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		else:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	elif event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
-		var button := event as InputEventMouseButton
-		# A click outside capture just recaptures the mouse; it is not also a swing.
-		if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	# Mouse-look and click-to-capture belong to the plain desktop scheme only. When an on-screen
+	# input layer is present — the phone touch pad or the Game Boy shell — that pad drives the
+	# camera, and grabbing pointer-lock here would fight the shell, so the mouse is left alone.
+	if _touch == null:
+		if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			var motion := event as InputEventMouseMotion
+			rotate_y(-motion.relative.x * mouse_sensitivity)
+			_pitch = clampf(_pitch - motion.relative.y * mouse_sensitivity, -1.4, 1.4)
+			camera.rotation.x = _pitch
 			return
-		if button.button_index == MOUSE_BUTTON_LEFT:
-			_primary_action()
-		elif button.button_index == MOUSE_BUTTON_RIGHT:
-			_interact()
-	elif event is InputEventKey and event.pressed and not event.echo:
+		if event.is_action_pressed(&"ui_cancel"):
+			# Toggle the mouse capture (Esc).
+			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			else:
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			return
+		if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+			var button := event as InputEventMouseButton
+			# A click outside capture just recaptures the mouse; it is not also a swing.
+			if Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+				return
+			if button.button_index == MOUSE_BUTTON_LEFT:
+				_primary_action()
+			elif button.button_index == MOUSE_BUTTON_RIGHT:
+				_interact()
+			return
+	# The action keys work in every scheme, so a real keyboard drives the game on desktop and in
+	# the web shell alike.
+	if event is InputEventKey and event.pressed and not event.echo:
 		var key := (event as InputEventKey).physical_keycode
 		if key == KEY_E:
 			_interact()

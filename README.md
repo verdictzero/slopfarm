@@ -291,6 +291,12 @@ carved-wood read of the original on the same teal field.
 
     python3 tools/gen_icon.py     # writes icon.svg + icon.svg.import
 
+`icon.png` is that same icon rasterised at 512×512 (`tools/svg_to_png.gd`, through Godot's own
+ThorVG renderer so it matches exactly), and it is what the Android preset uses for the APK
+launcher icon. Rerun `tools/svg_to_png.gd` after editing the vector to keep the two in step:
+
+    godot --headless --path . --script tools/svg_to_png.gd    # icon.svg -> icon.png
+
 ## Ground cover
 
 `scripts/terrain_textures.gd` builds three 32×32 textures from tileable value noise at

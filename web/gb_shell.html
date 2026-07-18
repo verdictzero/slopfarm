@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1c20">
+<title>$GODOT_PROJECT_NAME</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     POCKET // GB-1  —  the Game Boy shell that wraps SLOPFARM.
+     This file is exported as the game's web page: Godot mounts its
+     canvas into #gb-screen and the on-screen pad drives the game
+     through window.GameBoyUI (read game-side via JavaScriptBridge).
+     Palette (warm DMG plastic + pea-green LCD + oxblood keys).
+     ============================================================ */
+  :root{
+    --case:        #cbc6ba;   /* body plastic          */
+    --case-hi:     #ded9cd;   /* top highlight         */
+    --case-lo:     #a49f92;   /* bottom shade          */
+    --case-edge:   #8f8b7f;
+    --bezel:       #46443f;   /* screen surround       */
+    --bezel-hi:    #5c5a53;
+    --lcd:         #8ba60d;   /* pea-green glass        */
+    --lcd-deep:    #6c8a0a;
+    --ink:         #2b2b28;   /* dark plastic (dpad)    */
+    --ink-hi:      #4a4a45;
+    --oxblood:     #8a1f3d;   /* A / B face keys        */
+    --oxblood-hi:  #b03454;
+    --plum:        #35324a;   /* X / Y / Z / C accents  */
+    --plum-hi:     #514c6e;
+    --label:       #6e6a5f;
+    --brand:       #2d3a86;   /* game boy blue          */
+    --brand-red:   #c33a3a;
+    --room-a:      #26272c;
+    --room-b:      #17181c;
+    --focus:       #f4e04d;
+    /* guaranteed breathing room between the screen and the nearest control */
+    --gutter:      clamp(14px, 3.2vmin, 36px);
+  }
+
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ height:100%; margin:0; }
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    color:#e9e9ec;
+    background:radial-gradient(120% 100% at 50% 0%, var(--room-a), var(--room-b) 70%);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden; overscroll-behavior:none;
+    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none;
+  }
+
+  /* ---------- The physical case ---------- */
+  .shell{
+    position:relative;
+    width:min(100%, 1180px);
+    height:min(100%, 900px);
+    background:linear-gradient(160deg, var(--case-hi), var(--case) 34%, var(--case-lo));
+    border-radius:26px 26px 64px 26px;   /* the classic asymmetric bottom-right */
+    box-shadow:
+      inset 0 2px 0 rgba(255,255,255,.5),
+      inset 0 -6px 14px rgba(0,0,0,.22),
+      inset 0 0 0 1px var(--case-edge),
+      0 30px 60px -20px rgba(0,0,0,.7),
+      0 4px 10px rgba(0,0,0,.4);
+    padding:clamp(14px, 2.4vmin, 30px);
+    display:flex; flex-direction:column;
+    container-type:size;
+  }
+  /* faint moulded seam running around the inside */
+  .shell::before{
+    content:""; position:absolute; inset:clamp(8px,1.4vmin,16px);
+    border-radius:18px 18px 48px 18px;
+    box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22), inset 0 0 0 3px rgba(0,0,0,.06);
+    pointer-events:none;
+  }
+
+  .brandbar{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:10px; padding:0 4px 8px; flex:0 0 auto; min-height:0;
+  }
+  .brandbar .mark{ font-weight:800; letter-spacing:.14em; font-size:clamp(10px,1.5vmin,14px); color:#55524a; }
+  .brandbar .mark b{ color:var(--brand); font-style:italic; }
+  .brandbar .power{ display:flex; align-items:center; gap:7px; font-size:clamp(8px,1.1vmin,10px); letter-spacing:.16em; color:#6e6a5f; text-transform:uppercase; }
+  .led{ width:9px; height:9px; border-radius:50%; background:radial-gradient(circle at 30% 30%, #ff6a6a, var(--brand-red) 60%, #6d1414);
+        box-shadow:0 0 8px 1px rgba(217,80,80,.8), inset 0 0 2px rgba(0,0,0,.4); }
+  @media (prefers-reduced-motion:no-preference){ .led{ animation:pulse 3.4s ease-in-out infinite; } }
+  @keyframes pulse{ 0%,100%{opacity:.55} 50%{opacity:1} }
+
+  /* ---------- Control deck grid (this is the responsive engine) ---------- */
+  .deck{
+    flex:1 1 auto; min-height:0;
+    display:grid;
+    gap:var(--gutter);
+    align-items:center; justify-items:center;
+    /* PORTRAIT default: screen on top, two control columns, system row */
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:auto auto auto;
+    grid-template-areas:
+      "screen screen"
+      "cleft  cright"
+      "sys    sys";
+  }
+  @media (orientation:landscape){
+    .deck{
+      grid-template-columns:auto minmax(0,1fr) auto;
+      grid-template-rows:minmax(0,1fr) auto;
+      grid-template-areas:
+        "cleft screen cright"
+        "cleft sys    cright";
+    }
+  }
+
+  /* ---------- Screen (the game window) ----------
+     SLOPFARM renders 640x360, so the glass is 16:9 rather than the DMG square.
+     The bezel keeps the classic asymmetric bottom-right radius. */
+  .screen-wrap{ grid-area:screen; display:flex; align-items:center; justify-content:center; width:100%; height:100%; min-width:0; min-height:0; }
+  .screen{
+    position:relative; aspect-ratio:16/9;
+    /* width AND height are capped so the panel always fits its own grid cell —
+       it can never spill sideways onto the control columns */
+    width:min(96vw, 100%); height:auto;
+    max-width:calc(100% - var(--gutter)); max-height:calc(100% - var(--gutter));
+    background:var(--bezel);
+    border-radius:12px 12px 34px 12px;
+    padding:clamp(10px,2vmin,20px) clamp(10px,2vmin,20px) clamp(20px,3.4vmin,34px);
+    box-shadow:
+      inset 0 2px 3px rgba(255,255,255,.15),
+      inset 0 -4px 10px rgba(0,0,0,.5),
+      0 3px 8px rgba(0,0,0,.35);
+  }
+  @media (orientation:landscape){ .screen{ width:auto; height:min(60vh, 42vw); max-width:calc(100% - var(--gutter)); max-height:calc(100% - var(--gutter)); } }
+  .screen .strap{
+    position:absolute; left:0; right:0; bottom:clamp(5px,1vmin,10px);
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    color:#a7a49a; font-size:clamp(6px,.95vmin,9px); letter-spacing:.22em; text-transform:uppercase;
+  }
+  .screen .strap::before,.screen .strap::after{ content:""; height:1px; width:min(16%,60px); background:linear-gradient(90deg,transparent,#77746a,transparent); }
+  .glass{
+    position:relative; width:100%; height:100%;
+    border-radius:6px; overflow:hidden;
+    background:
+      radial-gradient(130% 120% at 50% 0%, var(--lcd), var(--lcd-deep) 88%);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.35), inset 0 0 24px rgba(0,0,0,.35);
+  }
+  /* the game (Godot's canvas) fills the glass; #status is Godot's loading overlay */
+  #gb-screen{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+  #canvas{
+    position:absolute; inset:0; width:100%; height:100%; display:block; border:0; outline:none;
+    /* letterbox 640x360 into the glass rather than distort, and keep the pixels crisp */
+    object-fit:contain;
+    image-rendering:pixelated; image-rendering:crisp-edges;
+    background:transparent;
+  }
+  /* subtle LCD scanline + glare, purely cosmetic, sits above the game */
+  .glass::after{
+    content:""; position:absolute; inset:0; pointer-events:none; z-index:6;
+    background:
+      linear-gradient(115deg, rgba(255,255,255,.16), rgba(255,255,255,0) 30%),
+      repeating-linear-gradient(0deg, rgba(0,0,0,.06) 0 2px, rgba(0,0,0,0) 2px 4px);
+    mix-blend-mode:overlay; border-radius:6px;
+  }
+
+  /* ---------- Godot boot overlay (splash / progress / error), scoped to the screen ---------- */
+  #status{
+    position:absolute; inset:0; z-index:5;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:$GODOT_SPLASH_COLOR; visibility:hidden;
+  }
+  #status-splash{ max-width:70%; max-height:60%; margin:auto; image-rendering:pixelated; }
+  #status-splash.show-image--false{ display:none; }
+  #status-splash.fullsize--true{ width:100%; height:100%; object-fit:contain; }
+  #status-splash.use-filter--false{ image-rendering:pixelated; }
+  #status-progress{ width:60%; margin-top:12px; height:8px; }
+  #status-notice{
+    background:rgba(20,26,4,.82); border-radius:.4rem; border:1px solid #9b3943;
+    color:#e6ecc4; font-family:'Press Start 2P',monospace; font-size:8px; line-height:1.5;
+    margin:0 1rem; overflow:hidden; padding:.7rem; text-align:center; max-width:86%;
+  }
+  #status-progress, #status-notice{ display:none; }
+
+  /* ---------- shared control column ---------- */
+  .col{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:clamp(12px,2.4vmin,26px); }
+  .controls-left{ grid-area:cleft; }
+  .controls-right{ grid-area:cright; }
+  .controls-sys{ grid-area:sys; }
+  .cap{ font-size:clamp(7px,1vmin,9px); letter-spacing:.2em; color:var(--label); text-transform:uppercase; margin-top:2px; }
+
+  /* ---------- D-PAD ---------- */
+  .dpad{
+    --arm:clamp(28px, 6.4vmin, 62px);
+    --pad:calc(var(--arm) * 3);
+    position:relative; width:var(--pad); height:var(--pad); touch-action:none;
+    filter:drop-shadow(0 4px 5px rgba(0,0,0,.4));
+  }
+  .dpad .cross{
+    position:absolute; inset:0;
+    background:
+      linear-gradient(180deg, var(--ink-hi), var(--ink)) ,
+      var(--ink);
+    -webkit-clip-path:polygon(33% 0,67% 0,67% 33%,100% 33%,100% 67%,67% 67%,67% 100%,33% 100%,33% 67%,0 67%,0 33%,33% 33%);
+    clip-path:polygon(33% 0,67% 0,67% 33%,100% 33%,100% 67%,67% 67%,67% 100%,33% 100%,33% 67%,0 67%,0 33%,33% 33%);
+    box-shadow:inset 0 2px 1px rgba(255,255,255,.16), inset 0 -3px 4px rgba(0,0,0,.55);
+  }
+  .dpad .hub{ position:absolute; left:50%; top:50%; width:34%; height:34%; transform:translate(-50%,-50%);
+    border-radius:50%; background:radial-gradient(circle at 50% 40%, #3d3d38, #232320);
+    box-shadow:inset 0 1px 2px rgba(0,0,0,.6); }
+  .dpad .arrow{ position:absolute; width:0;height:0; opacity:.55; }
+  .dpad .up{ top:8%; left:50%; transform:translateX(-50%); border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:7px solid #cfcabc; }
+  .dpad .down{ bottom:8%; left:50%; transform:translateX(-50%); border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #cfcabc; }
+  .dpad .left{ left:8%; top:50%; transform:translateY(-50%); border-top:5px solid transparent;border-bottom:5px solid transparent;border-right:7px solid #cfcabc; }
+  .dpad .right{ right:8%; top:50%; transform:translateY(-50%); border-top:5px solid transparent;border-bottom:5px solid transparent;border-left:7px solid #cfcabc; }
+  .dpad[data-up="1"] .up,.dpad[data-down="1"] .down,.dpad[data-left="1"] .left,.dpad[data-right="1"] .right{ opacity:1; }
+  /* pressed-direction glow overlays */
+  .dpad .lit{ position:absolute; background:rgba(140,166,13,.28); mix-blend-mode:screen; opacity:0; transition:opacity .05s; }
+  .dpad .lit.up{ top:0;left:33%;width:34%;height:33%; border:0; transform:none;}
+  .dpad .lit.down{ bottom:0;left:33%;width:34%;height:33%; border:0; transform:none;}
+  .dpad .lit.left{ left:0;top:33%;width:33%;height:34%; border:0; transform:none;}
+  .dpad .lit.right{ right:0;top:33%;width:33%;height:34%; border:0; transform:none;}
+  .dpad[data-up="1"] .lit.up,.dpad[data-down="1"] .lit.down,.dpad[data-left="1"] .lit.left,.dpad[data-right="1"] .lit.right{ opacity:1; }
+
+  /* ---------- Face buttons (A B C X Y Z) ---------- */
+  /* extra row-gap leaves room for the small action labels under the top button row */
+  .facepad{ display:grid; grid-template-columns:repeat(3,auto); column-gap:clamp(8px,1.8vmin,18px); row-gap:clamp(20px,3.6vmin,30px); align-items:center; justify-items:center; }
+  .btn{
+    position:relative; border:0; margin:0; cursor:pointer; touch-action:none;
+    width:var(--d,clamp(40px,8.2vmin,74px)); height:var(--d,clamp(40px,8.2vmin,74px));
+    border-radius:50%; color:#fbe9ee; font-family:'Inter',sans-serif; font-weight:800;
+    font-size:clamp(12px,2.4vmin,22px); letter-spacing:.02em;
+    background:radial-gradient(circle at 50% 32%, var(--hi,#b03454), var(--base,#8a1f3d) 68%, #5c1428);
+    box-shadow:
+      inset 0 2px 2px rgba(255,255,255,.35),
+      inset 0 -4px 6px rgba(0,0,0,.4),
+      0 5px 7px rgba(0,0,0,.4);
+    transition:transform .04s ease, box-shadow .04s ease, filter .04s ease;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .btn small{ position:absolute; bottom:-16px; font-size:9px; font-weight:700; letter-spacing:.14em; color:var(--label); white-space:nowrap; }
+  .btn.oxblood{ --hi:var(--oxblood-hi); --base:var(--oxblood); }
+  .btn.plum{ --hi:var(--plum-hi); --base:var(--plum); color:#e7e4f5; }
+  .btn.active{ transform:translateY(3px) scale(.97); box-shadow:inset 0 3px 6px rgba(0,0,0,.55), 0 1px 2px rgba(0,0,0,.4); filter:brightness(1.08); }
+  /* A B on a diagonal shelf like DMG, C sits above; XYZ row beneath — arranged via grid order */
+
+  /* ---------- Start / Select ---------- */
+  .sysrow{ display:flex; gap:clamp(16px,4vmin,44px); align-items:center; }
+  .pill-wrap{ display:flex; flex-direction:column; align-items:center; gap:5px; }
+  .pill{
+    width:clamp(46px,10vmin,88px); height:clamp(15px,3vmin,24px); border:0; cursor:pointer; touch-action:none;
+    border-radius:20px; transform:rotate(-24deg);
+    background:linear-gradient(180deg,#4a4a45,var(--ink));
+    box-shadow:inset 0 1px 1px rgba(255,255,255,.18), inset 0 -3px 4px rgba(0,0,0,.5), 0 3px 4px rgba(0,0,0,.35);
+    transition:transform .05s, box-shadow .05s;
+  }
+  .pill.active{ transform:rotate(-24deg) translateY(2px); box-shadow:inset 0 2px 5px rgba(0,0,0,.6); }
+
+  /* ---------- Analog sticks ---------- */
+  .stick{
+    --sz:clamp(66px,15vmin,140px);
+    position:relative; width:var(--sz); height:var(--sz); border-radius:50%; touch-action:none;
+    background:radial-gradient(circle at 50% 38%, #b7b2a6, #928d81 70%, #77726a);
+    box-shadow:inset 0 3px 6px rgba(0,0,0,.4), inset 0 -3px 5px rgba(255,255,255,.25), 0 4px 8px rgba(0,0,0,.35);
+  }
+  .stick .well{ position:absolute; inset:16%; border-radius:50%; background:radial-gradient(circle at 50% 40%, #3b3a36, #211f1d 78%);
+    box-shadow:inset 0 4px 8px rgba(0,0,0,.6); }
+  .stick .nub{
+    position:absolute; left:50%; top:50%; width:52%; height:52%;
+    transform:translate(-50%,-50%);
+    border-radius:50%;
+    background:radial-gradient(circle at 50% 34%, #6f6b62, #35332f 72%);
+    box-shadow:inset 0 2px 3px rgba(255,255,255,.22), inset 0 -3px 5px rgba(0,0,0,.6), 0 4px 6px rgba(0,0,0,.45);
+    will-change:transform;
+  }
+  .stick.dragging .nub{ box-shadow:inset 0 2px 3px rgba(255,255,255,.25), 0 0 10px 2px rgba(140,166,13,.5), 0 4px 6px rgba(0,0,0,.5); }
+
+  /* ---------- ridged speaker (bottom-right corner detail) ---------- */
+  .speaker{
+    position:absolute; right:clamp(18px,3vmin,34px); bottom:clamp(16px,2.6vmin,30px);
+    width:clamp(46px,9vmin,84px); height:clamp(30px,6vmin,54px); pointer-events:none; opacity:.5;
+    background:repeating-linear-gradient(60deg, transparent 0 5px, rgba(0,0,0,.22) 5px 7px);
+    -webkit-mask:repeating-linear-gradient(60deg, #000 0 5px, transparent 5px 7px);
+    border-radius:6px;
+  }
+
+  /* ---------- dev HUD (toggle with SELECT long-press) ---------- */
+  .hud{
+    position:absolute; left:50%; transform:translateX(-50%); bottom:6px; z-index:7;
+    font-family:'Press Start 2P',monospace; font-size:8px; letter-spacing:.05em;
+    color:#dfe6b0; background:rgba(20,26,4,.66); padding:5px 9px; border-radius:6px;
+    white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .2s;
+  }
+  .glass.hud-on .hud{ opacity:1; }
+
+  /* keyboard focus visibility for the quality floor */
+  .btn:focus-visible,.pill:focus-visible,.dpad:focus-visible,.stick:focus-visible{
+    outline:3px solid var(--focus); outline-offset:3px;
+  }
+
+  /* very small / squat screens: shrink gaps a touch more */
+  @media (max-height:520px) and (orientation:portrait){ .deck{ gap:clamp(6px,1.4vmin,14px);} }
+</style>
+$GODOT_HEAD_INCLUDE
+</head>
+<body>
+  <div class="shell" id="shell">
+    <div class="brandbar">
+      <span class="mark">POCKET&nbsp; <b>GB-1</b></span>
+      <span class="power"><span class="led"></span> Power</span>
+    </div>
+
+    <div class="deck">
+      <!-- GAME WINDOW: Godot mounts its canvas here -->
+      <div class="screen-wrap">
+        <div class="screen">
+          <div class="glass" id="glass">
+            <div id="gb-screen">
+              <canvas id="canvas" width="640" height="360" tabindex="0">
+                HTML5 canvas appears to be unsupported in the current browser.
+              </canvas>
+              <!-- Godot's loading splash / progress / error, styled to sit inside the screen -->
+              <div id="status">
+                <img id="status-splash" class="$GODOT_SPLASH_CLASSES" src="$GODOT_SPLASH" alt="">
+                <progress id="status-progress"></progress>
+                <div id="status-notice"></div>
+              </div>
+            </div>
+            <div class="hud" id="hud">READY</div>
+          </div>
+          <div class="strap">Dot&nbsp;Matrix With Stereo Sound</div>
+        </div>
+      </div>
+
+      <!-- LEFT: D-pad + left stick -->
+      <div class="col controls-left">
+        <div>
+          <div class="dpad" id="dpad" role="group" aria-label="Directional pad" tabindex="0">
+            <div class="cross"></div>
+            <span class="lit up"></span><span class="lit down"></span><span class="lit left"></span><span class="lit right"></span>
+            <span class="arrow up"></span><span class="arrow down"></span><span class="arrow left"></span><span class="arrow right"></span>
+            <div class="hub"></div>
+          </div>
+          <div class="cap" style="text-align:center">MOVE</div>
+        </div>
+        <div class="stick" id="stickL" role="slider" aria-label="Left analog stick (move)" tabindex="0">
+          <div class="well"></div><div class="nub"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: face buttons + right stick -->
+      <div class="col controls-right">
+        <div class="facepad">
+          <button class="btn plum"    data-btn="X">X<small>JUMP</small></button>
+          <button class="btn plum"    data-btn="C">C<small>DRIVE</small></button>
+          <button class="btn oxblood" data-btn="A">A<small>HIT</small></button>
+          <button class="btn plum"    data-btn="Y">Y<small>RUN</small></button>
+          <button class="btn plum"    data-btn="Z">Z<small>RESET</small></button>
+          <button class="btn oxblood" data-btn="B">B<small>USE</small></button>
+        </div>
+        <div class="stick" id="stickR" role="slider" aria-label="Right analog stick (look)" tabindex="0">
+          <div class="well"></div><div class="nub"></div>
+        </div>
+      </div>
+
+      <!-- SYSTEM: start / select -->
+      <div class="col controls-sys">
+        <div class="sysrow">
+          <div class="pill-wrap"><button class="pill" data-btn="SELECT" aria-label="Select"></button><span class="cap">SELECT</span></div>
+          <div class="pill-wrap"><button class="pill" data-btn="START" aria-label="Start"></button><span class="cap">START</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="speaker"></div>
+  </div>
+
+<script>
+/* ============================================================================
+   GameBoyUI  —  the shell's input layer. On-screen presses land here; the game
+   (Godot) reads them each frame via window.gbSnapshot() through JavaScriptBridge.
+   Also usable directly:  GameBoyUI.on('input', state => {...})  /  getState().
+   ============================================================================ */
+(function(){
+  const listeners = {};
+  const state = {
+    buttons: { A:false,B:false,C:false,X:false,Y:false,Z:false,START:false,SELECT:false },
+    dpad:    { up:false,down:false,left:false,right:false },
+    sticks:  { left:{x:0,y:0}, right:{x:0,y:0} }
+  };
+
+  // Keyboard emulation is available but OFF by default here: SLOPFARM reads the pad through
+  // window.gbSnapshot(), so we must not also dispatch synthetic keys (that would double-drive it).
+  let keyEmu = false;
+  let keymap = {
+    UP:'ArrowUp', DOWN:'ArrowDown', LEFT:'ArrowLeft', RIGHT:'ArrowRight',
+    A:'KeyZ', B:'KeyX', C:'KeyC', X:'KeyA', Y:'KeyS', Z:'KeyD',
+    START:'Enter', SELECT:'ShiftLeft'
+  };
+
+  function emit(){
+    const snap = JSON.parse(JSON.stringify(state));
+    (listeners.input||[]).forEach(fn=>{ try{ fn(snap);}catch(e){console.error(e);} });
+    window.dispatchEvent(new CustomEvent('gbui:input',{detail:snap}));
+  }
+  function fire(name, detail){
+    (listeners[name]||[]).forEach(fn=>{ try{ fn(detail);}catch(e){console.error(e);} });
+  }
+  function synthKey(code, down){
+    if(!keyEmu || !code) return;
+    const ev = new KeyboardEvent(down?'keydown':'keyup', {code, key:code, bubbles:true, cancelable:true});
+    (document.activeElement||document.body).dispatchEvent(ev);
+    document.dispatchEvent(ev);
+  }
+
+  const API = {
+    on(name, fn){ (listeners[name] ||= []).push(fn); return API; },
+    off(name, fn){ if(listeners[name]) listeners[name]=listeners[name].filter(f=>f!==fn); return API; },
+    getState(){ return JSON.parse(JSON.stringify(state)); },
+    setKeyboardMap(map){ Object.assign(keymap, map); return API; },
+    enableKeyboardEmulation(on){ keyEmu = !!on; return API; },
+    /* mount your real game: pass a DOM node, or an HTML string (e.g. an <iframe src>) */
+    mountGame(nodeOrHTML){
+      const host = document.getElementById('gb-screen');
+      host.innerHTML='';
+      if(typeof nodeOrHTML==='string') host.innerHTML=nodeOrHTML;
+      else if(nodeOrHTML instanceof Node) host.appendChild(nodeOrHTML);
+      return host;
+    },
+    /* expose internals the game can push to */
+    _setButton, _setDpad, _setStick
+  };
+
+  function _setButton(id, down){
+    if(state.buttons[id]===down) return;
+    state.buttons[id]=down;
+    fire(down?'buttondown':'buttonup', id);
+    synthKey(keymap[id], down);
+    emit();
+  }
+  function _setDpad(dir, down){
+    if(state.dpad[dir]===down) return;
+    state.dpad[dir]=down;
+    fire('dpad', {dir, down});
+    synthKey(keymap[dir.toUpperCase()], down);
+    emit();
+  }
+  function _setStick(id, x, y){
+    const s = state.sticks[id];
+    if(s.x===x && s.y===y) return;
+    s.x=x; s.y=y;
+    fire('stick', {id, x, y});
+    emit();
+  }
+
+  window.GameBoyUI = API;
+
+  /* The contract the game reads each frame: a fixed-order CSV of the whole pad.
+       up,down,left,right, A,B,C,X,Y,Z,START,SELECT, Lx,Ly,Rx,Ry
+     booleans as 0/1, sticks as -1..1 (stick Y is down-positive). Keep this order in lockstep
+     with scripts/gb_bridge.gd (GBShellInput). */
+  API.snapshot = function(){
+    const b = state.buttons, d = state.dpad, L = state.sticks.left, R = state.sticks.right;
+    return [
+      d.up?1:0, d.down?1:0, d.left?1:0, d.right?1:0,
+      b.A?1:0, b.B?1:0, b.C?1:0, b.X?1:0, b.Y?1:0, b.Z?1:0, b.START?1:0, b.SELECT?1:0,
+      L.x, L.y, R.x, R.y
+    ].join(',');
+  };
+  window.gbSnapshot = API.snapshot;
+
+  /* ---------------- wire the physical controls ---------------- */
+  document.addEventListener('DOMContentLoaded', ()=>{
+    // face buttons + pills
+    document.querySelectorAll('[data-btn]').forEach(el=>{
+      const id = el.dataset.btn;
+      const down = e=>{ e.preventDefault(); el.classList.add('active'); _setButton(id,true); el.setPointerCapture?.(e.pointerId); };
+      const up   = e=>{ el.classList.remove('active'); _setButton(id,false); };
+      el.addEventListener('pointerdown', down);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+      el.addEventListener('pointerleave', e=>{ if(e.buttons) return; });
+      el.addEventListener('lostpointercapture', up);
+      // keyboard access
+      el.addEventListener('keydown', e=>{ if(e.code==='Space'||e.code==='Enter'){e.preventDefault(); el.classList.add('active'); _setButton(id,true);} });
+      el.addEventListener('keyup',   e=>{ if(e.code==='Space'||e.code==='Enter'){el.classList.remove('active'); _setButton(id,false);} });
+    });
+
+    // D-PAD — position-driven, supports diagonals + thumb-roll
+    const dpad = document.getElementById('dpad');
+    let dpadPtr = null;
+    const DEAD = 0.16;
+    function dpadFrom(e){
+      const r = dpad.getBoundingClientRect();
+      const nx = (e.clientX - (r.left+r.width/2)) / (r.width/2);
+      const ny = (e.clientY - (r.top +r.height/2)) / (r.height/2);
+      const dirs = {
+        left:  nx < -DEAD, right: nx > DEAD,
+        up:    ny < -DEAD, down:  ny > DEAD
+      };
+      for(const k in dirs){ dpad.dataset[k]=dirs[k]?1:0; _setDpad(k, dirs[k]); }
+    }
+    function dpadClear(){ ['up','down','left','right'].forEach(k=>{ dpad.dataset[k]=0; _setDpad(k,false); }); }
+    dpad.addEventListener('pointerdown', e=>{ e.preventDefault(); dpadPtr=e.pointerId; dpad.setPointerCapture(e.pointerId); dpadFrom(e); });
+    dpad.addEventListener('pointermove', e=>{ if(e.pointerId===dpadPtr) dpadFrom(e); });
+    const dpEnd = e=>{ if(e.pointerId===dpadPtr){ dpadPtr=null; dpadClear(); } };
+    dpad.addEventListener('pointerup', dpEnd);
+    dpad.addEventListener('pointercancel', dpEnd);
+    dpad.addEventListener('lostpointercapture', dpEnd);
+    // keyboard arrows on focused dpad
+    const keyDir = {ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
+    dpad.addEventListener('keydown', e=>{ if(keyDir[e.code]){e.preventDefault(); dpad.dataset[keyDir[e.code]]=1; _setDpad(keyDir[e.code],true);} });
+    dpad.addEventListener('keyup',   e=>{ if(keyDir[e.code]){dpad.dataset[keyDir[e.code]]=0; _setDpad(keyDir[e.code],false);} });
+
+    // ANALOG STICKS — independent multitouch tracking + spring-back
+    document.querySelectorAll('.stick').forEach(stick=>{
+      const id = stick.id==='stickL' ? 'left' : 'right';
+      const nub = stick.querySelector('.nub');
+      let ptr=null;
+      const maxR = ()=> stick.getBoundingClientRect().width*0.30;
+      function move(e){
+        const r=stick.getBoundingClientRect();
+        let dx=e.clientX-(r.left+r.width/2), dy=e.clientY-(r.top+r.height/2);
+        const m=maxR(), dist=Math.hypot(dx,dy);
+        if(dist>m){ dx*=m/dist; dy*=m/dist; }
+        nub.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        _setStick(id, +(dx/m).toFixed(3), +(dy/m).toFixed(3));
+      }
+      function end(e){
+        if(e.pointerId!==ptr) return;
+        ptr=null; stick.classList.remove('dragging');
+        nub.style.transition='transform .12s cubic-bezier(.3,1.4,.5,1)';
+        nub.style.transform='translate(-50%,-50%)';
+        setTimeout(()=>nub.style.transition='',130);
+        _setStick(id,0,0);
+      }
+      stick.addEventListener('pointerdown', e=>{ e.preventDefault(); ptr=e.pointerId; stick.setPointerCapture(e.pointerId); stick.classList.add('dragging'); nub.style.transition=''; move(e); });
+      stick.addEventListener('pointermove', e=>{ if(e.pointerId===ptr) move(e); });
+      stick.addEventListener('pointerup', end);
+      stick.addEventListener('pointercancel', end);
+      stick.addEventListener('lostpointercapture', end);
+    });
+
+    // dev HUD toggle: hold SELECT for 600ms
+    const glass=document.getElementById('glass'), hud=document.getElementById('hud');
+    let selTimer=null;
+    document.querySelector('[data-btn="SELECT"]').addEventListener('pointerdown', ()=>{ selTimer=setTimeout(()=>glass.classList.toggle('hud-on'),600); });
+    ['pointerup','pointercancel'].forEach(ev=>document.querySelector('[data-btn="SELECT"]').addEventListener(ev, ()=>clearTimeout(selTimer)));
+    API.on('input', s=>{
+      const active = Object.entries(s.buttons).filter(([,v])=>v).map(([k])=>k)
+        .concat(Object.entries(s.dpad).filter(([,v])=>v).map(([k])=>k.toUpperCase()));
+      const lx=s.sticks.left, rx=s.sticks.right;
+      hud.textContent = (active.join(' ')||'—')
+        + `  L(${lx.x.toFixed(1)},${lx.y.toFixed(1)}) R(${rx.x.toFixed(1)},${rx.y.toFixed(1)})`;
+    });
+  });
+})();
+</script>
+
+<!-- ============================================================================
+     Godot engine bootstrap. The export fills $GODOT_URL / $GODOT_CONFIG etc.;
+     the engine grabs #canvas (canvas_resize_policy = None, so our CSS controls
+     the layout) and mounts the game inside the Game Boy screen above.
+     ============================================================================ -->
+<script src="$GODOT_URL"></script>
+<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const statusOverlay = document.getElementById('status');
+	const statusProgress = document.getElementById('status-progress');
+	const statusNotice = document.getElementById('status-notice');
+
+	let initializing = true;
+	let statusMode = '';
+
+	function setStatusMode(mode) {
+		if (statusMode === mode || !initializing) {
+			return;
+		}
+		if (mode === 'hidden') {
+			statusOverlay.remove();
+			initializing = false;
+			return;
+		}
+		statusOverlay.style.visibility = 'visible';
+		statusProgress.style.display = mode === 'progress' ? 'block' : 'none';
+		statusNotice.style.display = mode === 'notice' ? 'block' : 'none';
+		statusMode = mode;
+	}
+
+	function setStatusNotice(text) {
+		while (statusNotice.lastChild) {
+			statusNotice.removeChild(statusNotice.lastChild);
+		}
+		const lines = text.split('\n');
+		lines.forEach((line) => {
+			statusNotice.appendChild(document.createTextNode(line));
+			statusNotice.appendChild(document.createElement('br'));
+		});
+	}
+
+	function displayFailureNotice(err) {
+		console.error(err);
+		if (err instanceof Error) {
+			setStatusNotice(err.message);
+		} else if (typeof err === 'string') {
+			setStatusNotice(err);
+		} else {
+			setStatusNotice('An unknown error occurred.');
+		}
+		setStatusMode('notice');
+		initializing = false;
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+
+	if (missing.length !== 0) {
+		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
+			let serviceWorkerRegistrationPromise;
+			try {
+				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
+			} catch (err) {
+				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
+			}
+			// There's a chance that installing the service worker would fix the issue
+			Promise.race([
+				serviceWorkerRegistrationPromise.then((registration) => {
+					if (registration != null) {
+						return Promise.reject(new Error('Service worker already exists.'));
+					}
+					return registration;
+				}).then(() => engine.installServiceWorker()),
+				// For some reason, `getRegistration()` can stall
+				new Promise((resolve) => {
+					setTimeout(() => resolve(), 2000);
+				}),
+			]).then(() => {
+				// Reload if there was no error.
+				window.location.reload();
+			}).catch((err) => {
+				console.error('Error while registering service worker:', err);
+			});
+		} else {
+			// Display the message as usual
+			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
+			displayFailureNotice(missingMsg + missing.join('\n'));
+		}
+	} else {
+		setStatusMode('progress');
+		engine.startGame({
+			'onProgress': function (current, total) {
+				if (current > 0 && total > 0) {
+					statusProgress.value = current;
+					statusProgress.max = total;
+				} else {
+					statusProgress.removeAttribute('value');
+					statusProgress.removeAttribute('max');
+				}
+			},
+		}).then(() => {
+			setStatusMode('hidden');
+		}, displayFailureNotice);
+	}
+}());
+</script>
+</body>
+</html>
