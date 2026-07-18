@@ -43,9 +43,10 @@ func _build_bare(tex: Texture2D) -> void:
 func _fit_bare() -> void:
 	if _bare_lcd == null:
 		return
+	var game := Vector2(_world.size)
 	var view := get_viewport().get_visible_rect().size
-	var s := maxf(1.0, floor(minf(view.x / 640.0, view.y / 360.0)))
-	var dim := Vector2(640.0, 360.0) * s
+	var s := maxf(1.0, floor(minf(view.x / game.x, view.y / game.y)))
+	var dim := game * s
 	_bare_lcd.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_bare_lcd.size = dim
 	_bare_lcd.position = ((view - dim) * 0.5).round()

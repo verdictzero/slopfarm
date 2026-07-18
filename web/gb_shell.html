@@ -115,11 +115,11 @@
   }
 
   /* ---------- Screen (the game window) ----------
-     SLOPFARM renders 640x360, so the glass is 16:9 rather than the DMG square.
+     SLOPFARM renders a square viewport, so the glass is 1:1 like the DMG.
      The bezel keeps the classic asymmetric bottom-right radius. */
   .screen-wrap{ grid-area:screen; display:flex; align-items:center; justify-content:center; width:100%; height:100%; min-width:0; min-height:0; }
   .screen{
-    position:relative; aspect-ratio:16/9;
+    position:relative; aspect-ratio:1/1;
     /* width AND height are capped so the panel always fits its own grid cell —
        it can never spill sideways onto the control columns */
     width:min(96vw, 100%); height:auto;
@@ -316,7 +316,7 @@ $GODOT_HEAD_INCLUDE
         <div class="screen">
           <div class="glass" id="glass">
             <div id="gb-screen">
-              <canvas id="canvas" width="640" height="360" tabindex="0">
+              <canvas id="canvas" width="360" height="360" tabindex="0">
                 HTML5 canvas appears to be unsupported in the current browser.
               </canvas>
               <!-- Godot's loading splash / progress / error, styled to sit inside the screen -->
