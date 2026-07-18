@@ -33,6 +33,7 @@ var _prev_a := false
 var _prev_b := false
 var _prev_c := false
 var _prev_z := false
+var _prev_start := false
 
 
 func _ready() -> void:
@@ -77,6 +78,7 @@ func _process(delta: float) -> void:
 	var x := f[7] == "1"
 	var y := f[8] == "1"
 	var z := f[9] == "1"
+	var start := f[10] == "1"
 	var lx := f[12].to_float()
 	var ly := f[13].to_float()
 	var rx := f[14].to_float()
@@ -107,10 +109,13 @@ func _process(delta: float) -> void:
 		truck_pressed.emit()
 	if z and not _prev_z:
 		respawn_pressed.emit()
+	if start and not _prev_start:
+		menu_pressed.emit()
 	_prev_a = a
 	_prev_b = b
 	_prev_c = c
 	_prev_z = z
+	_prev_start = start
 
 
 ## Return to neutral when the shell is not (yet) feeding input, releasing any held state so a
@@ -123,3 +128,4 @@ func _go_idle() -> void:
 	_prev_b = false
 	_prev_c = false
 	_prev_z = false
+	_prev_start = false

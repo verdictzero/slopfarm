@@ -29,6 +29,7 @@ signal hit_pressed
 signal interact_pressed
 signal truck_pressed
 signal respawn_pressed
+signal menu_pressed
 
 ## -1..1 on each axis: x = strafe (right positive), y = forward (up/forward positive).
 var move_vector := Vector2.ZERO

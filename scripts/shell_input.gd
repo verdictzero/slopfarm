@@ -61,6 +61,9 @@ func drive() -> void:
 func reset_action() -> void:
 	respawn_pressed.emit()
 
+func menu() -> void:
+	menu_pressed.emit()
+
 
 func _process(delta: float) -> void:
 	# D-pad and left stick both fold into move_vector (forward = +y); clamp so a half-pushed stick

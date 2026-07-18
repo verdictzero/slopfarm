@@ -283,7 +283,7 @@ func _button_down(id: String) -> void:
 		"btn_X": _pad.jump(true)
 		"btn_Y": _pad.run()
 		"btn_Z": _pad.reset_action()
-		"pill_start": _pad.reset_action()
+		"pill_start": _pad.menu()
 		"pill_select": pass
 	if _btns.has(id):
 		_btns[id]["node"].texture = _btns[id]["pressed"]
