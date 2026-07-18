@@ -1,5 +1,41 @@
 # Deploy notes
 
+## Web (the Game Boy shell)
+
+The game also ships as a browser build wrapped in a Game Boy handheld shell —
+`web/gb_shell.html`, used as the Godot **custom HTML shell**. The engine's canvas mounts
+inside the shell's screen and the on-screen pad (D-pad, A/B/C/X/Y/Z, Start/Select, two
+sticks) drives the game. It fits phones, foldables and tablets with no per-device code.
+
+Build it (needs the Godot 4.7 **web** export templates installed — see the caveat below):
+
+```
+tools/export_web.sh                 # release -> build/web/index.html (+ .js/.wasm/.pck)
+python3 -m http.server -d build/web 8080   # then open http://localhost:8080/
+```
+
+The Web preset (`export_presets.cfg` → `[preset.1]`) exports with **threads off**, so the
+build runs on any plain static host — no cross-origin-isolation (COOP/COEP) headers needed.
+`html/canvas_resize_policy=0` leaves the canvas to the shell's CSS (a 640×360 buffer scaled
+`pixelated` to fill the 16:9 screen). Upload the whole `build/web/` directory to a static host.
+
+Controls, pad → game:
+
+| Pad | Game |
+|---|---|
+| D-pad + left stick | move |
+| right stick | look |
+| A | hit (swing wand / throw) |
+| B | use (pick up / feed / load / sell) |
+| X | jump (held) · Y | sprint (held) |
+| C | drive truck · Z | respawn |
+
+**Export-templates caveat:** the web templates are a large download from GitHub releases,
+which the CI sandbox cannot reach (GitHub egress is blocked there — the same reason the SFTP
+upload below runs off-sandbox). Run `tools/export_web.sh` on a machine or CI where
+*Manage Export Templates* has installed the 4.7 web templates. The Android APK build, by
+contrast, works in-session because its templates are already present.
+
 ## Android APK
 
 Build a signed debug APK (arm64-v8a, minSdk 24 / Android 7+):
