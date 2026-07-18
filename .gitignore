@@ -23,3 +23,6 @@ __pycache__/
 
 # Exported build artifacts (APKs etc.)
 build/
+
+# Local deploy credentials (never commit secrets)
+.deploy/
