@@ -13,6 +13,7 @@ class_name GBShell
 
 var _shell_input: ShellInput
 var _forward_input := false
+var _bare_lcd: TextureRect
 
 
 func _ready() -> void:
@@ -25,16 +26,29 @@ func _ready() -> void:
 		_forward_input = true
 
 
-## Desktop / web: the LCD fills the window, integer-scaled and crisp.
+## Desktop / web: the game is sized to a whole multiple of 640x360 and centred, so NEAREST scaling
+## stays crisp rather than shimmering at fractional factors.
 func _build_bare(tex: Texture2D) -> void:
-	var lcd := TextureRect.new()
-	lcd.texture = tex
-	lcd.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	lcd.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	lcd.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	lcd.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	lcd.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_display.add_child(lcd)
+	_bare_lcd = TextureRect.new()
+	_bare_lcd.texture = tex
+	_bare_lcd.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_bare_lcd.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bare_lcd.stretch_mode = TextureRect.STRETCH_SCALE
+	_bare_lcd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_display.add_child(_bare_lcd)
+	_fit_bare()
+	get_viewport().size_changed.connect(_fit_bare)
+
+
+func _fit_bare() -> void:
+	if _bare_lcd == null:
+		return
+	var view := get_viewport().get_visible_rect().size
+	var s := maxf(1.0, floor(minf(view.x / 640.0, view.y / 360.0)))
+	var dim := Vector2(640.0, 360.0) * s
+	_bare_lcd.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_bare_lcd.size = dim
+	_bare_lcd.position = ((view - dim) * 0.5).round()
 
 
 ## Native mobile: the portrait console around the LCD, with input pushed to the player.

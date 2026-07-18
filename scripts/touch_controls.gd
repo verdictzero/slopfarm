@@ -20,8 +20,10 @@ class_name TouchControls
 static func is_web() -> bool:
 	return OS.has_feature("web") or OS.has_environment("SLOPFARM_GBSHELL")
 static func is_console() -> bool:
-	return not is_web() and (OS.has_feature("mobile") or DisplayServer.is_touchscreen_available() \
-			or OS.has_environment("SLOPFARM_TOUCH"))
+	# Deliberately NOT keyed on DisplayServer.is_touchscreen_available(): that fires on desktop
+	# touchscreen laptops / 2-in-1s, which would hand a mouse+keyboard user the portrait phone
+	# faceplate. Only a real handheld export (or the explicit preview flag) gets the console.
+	return not is_web() and (OS.has_feature("mobile") or OS.has_environment("SLOPFARM_TOUCH"))
 
 signal hit_pressed
 signal interact_pressed

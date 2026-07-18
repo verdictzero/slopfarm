@@ -25,6 +25,12 @@ func _ready() -> void:
 	set_process_input(false)
 
 
+func _draw() -> void:
+	# Inert: never paint the inherited TouchControls faceplate. Without this, its _draw would render
+	# a stray D-pad/bezel fragment at (0,0) over the console (the node is never laid out).
+	pass
+
+
 # ---- write API, called by console_pad.gd ----------------------------------
 func dpad(up: bool, down: bool, left: bool, right: bool) -> void:
 	_up = up; _down = down; _left = left; _right = right

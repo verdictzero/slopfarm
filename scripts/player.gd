@@ -119,9 +119,9 @@ func _ready() -> void:
 ## Whether this build should show touch controls: a real touch device, or an explicitly mobile
 ## export (so it is right in the APK even on a device that also reports a mouse).
 func _is_mobile() -> bool:
-	# SLOPFARM_TOUCH forces the touch controls on for previewing them on a desktop build.
-	return OS.has_feature("mobile") or DisplayServer.is_touchscreen_available() \
-			or OS.has_environment("SLOPFARM_TOUCH")
+	# Defer to the one predicate the shell also uses, so the two never drift: the shell builds the
+	# console exactly when this is true, and we skip self-spawning to await its injection.
+	return TouchControls.is_console()
 
 
 ## Whether input comes from the Game Boy HTML shell. True for any web export (the web build only
