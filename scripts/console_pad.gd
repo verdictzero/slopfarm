@@ -13,32 +13,32 @@ const STICK_MAX := 0.34     # fraction of the socket the thumb can travel
 
 # Control layout, in shell (448x900) units: centres and sizes tuned to sit clear of the square
 # screen and of each other, with room for the captions beneath.
-const BTN_W := 48.0
-const BTN_H := 50.0         # button art is 96x100
-const DPAD_W := 116.0
-const STICK_W := 92.0       # pivot socket art is 140x140 (square)
-const BALL_W := 50.0        # ball art is 76x84; rides ~centred in the socket
-const BALL_H := 55.2
-const BALL_DY := 2.6        # the ball's rest centre sits a touch below the socket centre
-const PILL_W := 66.0
-const PILL_H := 30.2        # pill art is 140x64
-const CAP_W := 74.0
-const CAP_H := 11.6         # caption art is 140x22
+const BTN_W := 62.0
+const BTN_H := 64.6         # button art is 96x100
+const DPAD_W := 150.0
+const STICK_W := 116.0      # pivot socket art is 140x140 (square)
+const BALL_W := 63.0        # ball art is 76x84; rides ~centred in the socket
+const BALL_H := 69.6
+const BALL_DY := 3.3        # the ball's rest centre sits a touch below the socket centre
+const PILL_W := 84.0
+const PILL_H := 38.4        # pill art is 140x64
+const CAP_W := 88.0
+const CAP_H := 13.8         # caption art is 140x22
 
 # id, centre x, centre y, caption word
 const BUTTONS := [
-	["btn_X", 268.0, 528.0, "jump"],
-	["btn_C", 328.0, 528.0, "drive"],
-	["btn_A", 388.0, 528.0, "hit"],
-	["btn_Y", 268.0, 606.0, "run"],
-	["btn_Z", 328.0, 606.0, "reset"],
-	["btn_B", 388.0, 606.0, "use"],
+	["btn_X", 262.0, 528.0, "jump"],
+	["btn_C", 330.0, 528.0, "drive"],
+	["btn_A", 398.0, 528.0, "hit"],
+	["btn_Y", 262.0, 614.0, "run"],
+	["btn_Z", 330.0, 614.0, "reset"],
+	["btn_B", 398.0, 614.0, "use"],
 ]
-const DPAD_C := Vector2(108.0, 552.0)
-const STICK_L := Vector2(108.0, 730.0)
-const STICK_R := Vector2(330.0, 730.0)
-const PILL_SEL := Vector2(186.0, 828.0)
-const PILL_START := Vector2(262.0, 828.0)
+const DPAD_C := Vector2(104.0, 571.0)
+const STICK_L := Vector2(104.0, 752.0)
+const STICK_R := Vector2(330.0, 752.0)
+const PILL_SEL := Vector2(178.0, 840.0)
+const PILL_START := Vector2(272.0, 840.0)
 
 var _pad: ShellInput
 var _shell_w := 448.0
