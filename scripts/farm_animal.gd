@@ -195,7 +195,12 @@ func _knock_out(from_dir: Vector3) -> void:
 	# scaled RigidBody misbehaves besides. Position and yaw only.
 	var placement := Transform3D(Basis(Vector3.UP, rotation.y), global_position)
 	var ragdoll := HorseRagdoll.create(species, placement, model_scale, impulse, _watch)
-	var host := get_tree().current_scene
+	# Parent to the world root INSIDE the game SubViewport — get_tree().current_scene is the outer
+	# console shell now, and a 3D ragdoll parented there never enters the world (it just vanishes).
+	# The world root persists across farm-plan reloads, unlike the FarmBuilder the animal lived under.
+	var host: Node = get_tree().get_first_node_in_group("world")
+	if host == null:
+		host = get_tree().current_scene
 	if host != null:
 		host.add_child(ragdoll)
 	queue_free()
