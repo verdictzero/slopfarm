@@ -1,37 +1,60 @@
 extends Control
 class_name GBConsole
-## Builds the portrait Game Boy console from the PNG assets extracted from the web shell
-## (sprites/gb_ui/ + layout.json, produced by tools/gen_gb_ui_assets.js) and turns touches on the
-## D-pad, analog sticks, face keys and pills into calls on a ShellInput. Every part is composited at
-## the exact web-relative position recorded in layout.json, so the native console reads as the web
-## one. The game's LCD is a TextureRect showing the world SubViewport, seated over the bezel's glass.
+## Builds the portrait Game Boy console from the vector-derived UI kit (sprites/gb_ui/, buttons and
+## controls with idle/pressed states) and turns touches into calls on a ShellInput. The case and the
+## square screen come from layout.json (case.png / bezel.png / the glass rect); the controls are laid
+## out here, over the lower half of the case, with the game LCD seated in the screen. Every key and
+## pill swaps to its pressed art on touch, the D-pad shows the held direction, and the stick ball
+## rides its socket, so the pad feels alive.
 
 const ASSET_DIR := "res://sprites/gb_ui/"
-const DEAD := 0.16          # D-pad dead zone, matches the web shell
-const STICK_MAX := 0.30     # fraction of stick width the thumb can travel, matches the web shell
+const DEAD := 0.16          # D-pad dead zone
+const STICK_MAX := 0.34     # fraction of the socket the thumb can travel
 
-# The transparent capture margins tools/gen_gb_ui_assets.js bakes around each part, in layout px
-# [left, top, right, bottom]. Stripped at hit-test time so a part's touch target is its drawn glyph,
-# not its padded rect (which would overlap its neighbours). Keep in sync with the generator.
-const _PADS := {
-	"btn": [14.0, 6.0, 14.0, 24.0],   # bottom margin also clips the baked caption below the disc
-	"pill": [14.0, 14.0, 14.0, 14.0],
-	"dpad": [10.0, 10.0, 10.0, 10.0],
-	"stick": [10.0, 10.0, 10.0, 10.0],
-}
+# Control layout, in shell (448x900) units: centres and sizes tuned to sit clear of the square
+# screen and of each other, with room for the captions beneath.
+const BTN_W := 48.0
+const BTN_H := 50.0         # button art is 96x100
+const DPAD_W := 116.0
+const STICK_W := 92.0       # pivot socket art is 140x140 (square)
+const BALL_W := 50.0        # ball art is 76x84; rides ~centred in the socket
+const BALL_H := 55.2
+const BALL_DY := 2.6        # the ball's rest centre sits a touch below the socket centre
+const PILL_W := 66.0
+const PILL_H := 30.2        # pill art is 140x64
+const CAP_W := 74.0
+const CAP_H := 11.6         # caption art is 140x22
+
+# id, centre x, centre y, caption word
+const BUTTONS := [
+	["btn_X", 268.0, 528.0, "jump"],
+	["btn_C", 328.0, 528.0, "drive"],
+	["btn_A", 388.0, 528.0, "hit"],
+	["btn_Y", 268.0, 606.0, "run"],
+	["btn_Z", 328.0, 606.0, "reset"],
+	["btn_B", 388.0, 606.0, "use"],
+]
+const DPAD_C := Vector2(108.0, 552.0)
+const STICK_L := Vector2(108.0, 730.0)
+const STICK_R := Vector2(330.0, 730.0)
+const PILL_SEL := Vector2(186.0, 828.0)
+const PILL_START := Vector2(262.0, 828.0)
 
 var _pad: ShellInput
 var _shell_w := 448.0
 var _shell_h := 900.0
-var _case: Control                       # sized to the fitted case rect by the AspectRatioContainer
-var _nodes := {}                         # interactive id -> TextureRect (queried by global rect)
-var _place := {}                         # interactive id -> its layout.json placement (for hit-tests)
+var _case: Control
 
-# multi-touch tracking
+var _btns := {}             # id -> {node, idle, pressed}
+var _dpad_node: TextureRect
+var _dpad_tex := {}         # "idle".."right" -> Texture2D
+var _pills := {}            # id -> {node, idle, pressed}
+var _sticks := {}           # "left"/"right" -> {pivot, ball, idle, pressed}
+
 var _dp_touch := -1
-var _lstick_touch := -1
-var _rstick_touch := -1
-var _btn_touches := {}                   # touch index -> button id
+var _l_touch := -1
+var _r_touch := -1
+var _btn_touches := {}      # touch index -> button/pill id
 
 
 func setup(shell_input: ShellInput, world_texture: Texture2D) -> void:
@@ -66,14 +89,12 @@ func _build(world_texture: Texture2D) -> void:
 	_shell_w = float(layout["shell"]["w"])
 	_shell_h = float(layout["shell"]["h"])
 
-	# Dim "room" behind the console, echoing the web page backdrop.
 	var room := ColorRect.new()
 	room.color = Color(0.09, 0.09, 0.11)
 	room.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	room.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(room)
 
-	# Fit the fixed 448x900 case into whatever portrait rect the device gives us.
 	var fit := AspectRatioContainer.new()
 	fit.ratio = _shell_w / _shell_h
 	fit.stretch_mode = AspectRatioContainer.STRETCH_FIT
@@ -85,43 +106,25 @@ func _build(world_texture: Texture2D) -> void:
 	_case.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fit.add_child(_case)
 
-	# The cream body, placed at its true capture offset so the 456x908 texture maps 1:1: its 4px
-	# margin sits outside the shell box and the body aligns exactly with every other part.
-	_sprite("case.png", -4, -4, _shell_w + 8, _shell_h + 8)
-
-	# Screen bezel (with green glass) first, then the game LCD seated over the glass hole.
-	var glass: Dictionary = layout["glass_in_shell"]
+	# Cream body, then the screen bezel, then the game LCD seated over the glass.
+	_rect(load(ASSET_DIR + "case.png"), -4, -4, _shell_w + 8, _shell_h + 8)
 	for pl in layout["placements"]:
-		var id := String(pl["id"])
-		if id == "screen":
-			_sprite(String(pl["asset"]), pl["x"], pl["y"], pl["w"], pl["h"])
+		if String(pl["id"]) == "screen":
+			_rect(load(ASSET_DIR + "bezel.png"), pl["x"], pl["y"], pl["w"], pl["h"])
 			break
-	var lcd := _sprite_tex(world_texture, glass["x"], glass["y"], glass["w"], glass["h"], true, true)
+	var g: Dictionary = layout["glass_in_shell"]
+	var lcd := _rect(world_texture, g["x"], g["y"], g["w"], g["h"], true, true)
 	lcd.name = "Lcd"
 
-	# Every other part at its recorded position; keep refs to the interactive ones.
-	for pl in layout["placements"]:
-		var id := String(pl["id"])
-		if id == "screen":
-			continue
-		var tr := _sprite(String(pl["asset"]), pl["x"], pl["y"], pl["w"], pl["h"])
-		if id == "dpad" or id.begins_with("btn_") or id.begins_with("pill_") or id.begins_with("stick_"):
-			_nodes[id] = tr
-			_place[id] = pl
-		if id.begins_with("stick_"):
-			# A centred nub so the socket does not read as empty (static for now).
-			var nw := float(pl["w"]) * 0.52
-			var nh := float(pl["h"]) * 0.52
-			_sprite("stick_nub.png", float(pl["x"]) + (float(pl["w"]) - nw) * 0.5,
-					float(pl["y"]) + (float(pl["h"]) - nh) * 0.5, nw, nh)
+	_build_dpad()
+	_build_buttons()
+	_build_sticks()
+	_build_pills()
 
 
-func _sprite(tex_name: String, x: float, y: float, w: float, h: float,
-		nearest := false, aspect := false) -> TextureRect:
-	return _sprite_tex(load(ASSET_DIR + tex_name), x, y, w, h, nearest, aspect)
-
-
-func _sprite_tex(tex: Texture2D, x: float, y: float, w: float, h: float,
+# ---- placement helpers -----------------------------------------------------
+## Place a texture by top-left (x,y,w,h) in shell units, via ratio anchors so it scales with the case.
+func _rect(tex: Texture2D, x: float, y: float, w: float, h: float,
 		nearest := false, aspect := false) -> TextureRect:
 	var tr := TextureRect.new()
 	tr.texture = tex
@@ -138,6 +141,54 @@ func _sprite_tex(tex: Texture2D, x: float, y: float, w: float, h: float,
 	return tr
 
 
+## Place a texture centred at (cx,cy) in shell units.
+func _at(tex: Texture2D, cx: float, cy: float, w: float, h: float) -> TextureRect:
+	return _rect(tex, cx - w * 0.5, cy - h * 0.5, w, h)
+
+
+func _caption(word: String, cx: float, cy: float) -> void:
+	var path := ASSET_DIR + "cap_" + word + ".png"
+	if ResourceLoader.exists(path):
+		_at(load(path), cx, cy, CAP_W, CAP_H)
+
+
+func _build_dpad() -> void:
+	for k in ["idle", "up", "down", "left", "right"]:
+		_dpad_tex[k] = load(ASSET_DIR + "dpad_" + k + ".png")
+	_dpad_node = _at(_dpad_tex["idle"], DPAD_C.x, DPAD_C.y, DPAD_W, DPAD_W)
+	_caption("move", DPAD_C.x, DPAD_C.y + DPAD_W * 0.5 + 9.0)
+
+
+func _build_buttons() -> void:
+	for e in BUTTONS:
+		var id: String = e[0]
+		var idle: Texture2D = load(ASSET_DIR + id + "_idle.png")
+		var pressed: Texture2D = load(ASSET_DIR + id + "_pressed.png")
+		var node := _at(idle, e[1], e[2], BTN_W, BTN_H)
+		_btns[id] = {"node": node, "idle": idle, "pressed": pressed}
+		_caption(String(e[3]), e[1], float(e[2]) + BTN_H * 0.5 + 8.0)
+
+
+func _build_sticks() -> void:
+	var pivot: Texture2D = load(ASSET_DIR + "stick_pivot.png")
+	var ball_idle: Texture2D = load(ASSET_DIR + "stick_ball.png")
+	var ball_pressed: Texture2D = load(ASSET_DIR + "stick_ball_pressed.png")
+	for side in ["left", "right"]:
+		var c: Vector2 = STICK_L if side == "left" else STICK_R
+		var pv := _at(pivot, c.x, c.y, STICK_W, STICK_W)
+		var ball := _at(ball_idle, c.x, c.y + BALL_DY, BALL_W, BALL_H)
+		_sticks[side] = {"pivot": pv, "ball": ball, "idle": ball_idle, "pressed": ball_pressed}
+
+
+func _build_pills() -> void:
+	var idle: Texture2D = load(ASSET_DIR + "pill_idle.png")
+	var pressed: Texture2D = load(ASSET_DIR + "pill_pressed.png")
+	for e in [["pill_select", PILL_SEL, "select"], ["pill_start", PILL_START, "start"]]:
+		var node := _at(idle, e[1].x, e[1].y, PILL_W, PILL_H)
+		_pills[e[0]] = {"node": node, "idle": idle, "pressed": pressed}
+		_caption(String(e[2]), e[1].x, e[1].y + PILL_H * 0.5 + 8.0)
+
+
 # ---- touch -----------------------------------------------------------------
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
@@ -150,57 +201,41 @@ func _input(event: InputEvent) -> void:
 		var d := event as InputEventScreenDrag
 		if d.index == _dp_touch:
 			_update_dpad(d.position)
-		elif d.index == _lstick_touch:
+		elif d.index == _l_touch:
 			_update_stick("left", d.position)
-		elif d.index == _rstick_touch:
+		elif d.index == _r_touch:
 			_update_stick("right", d.position)
 
 
-## Drawn (opaque) region of an interactive part in global coords: its scaled rect with the capture
-## margin stripped, so overlapping padded rects stop stealing each other's taps.
-func _hit_region(id: String) -> Rect2:
-	var r: Rect2 = _nodes[id].get_global_rect()
-	var pl: Dictionary = _place[id]
-	var pad: Array = _PADS["dpad"]
-	if id.begins_with("btn_"): pad = _PADS["btn"]
-	elif id.begins_with("pill_"): pad = _PADS["pill"]
-	elif id.begins_with("stick_"): pad = _PADS["stick"]
-	var fl: float = pad[0] / float(pl["w"])
-	var ft: float = pad[1] / float(pl["h"])
-	var fr: float = pad[2] / float(pl["w"])
-	var fb: float = pad[3] / float(pl["h"])
-	return Rect2(r.position.x + fl * r.size.x, r.position.y + ft * r.size.y,
-			r.size.x * (1.0 - fl - fr), r.size.y * (1.0 - ft - fb))
-
-
 func _press(index: int, pos: Vector2) -> void:
-	# Face keys / pills: their padded rects overlap, so among the ones whose DRAWN region is hit,
-	# take the closest — a tap resolves to the key you touched, not the first in the list.
-	var best_id := ""
+	# Face keys: pick the closest one hit (rects do not overlap, but be robust).
+	var best := ""
 	var best_d := INF
-	for id in ["btn_A", "btn_B", "btn_C", "btn_X", "btn_Y", "btn_Z", "pill_start", "pill_select"]:
-		if not _nodes.has(id):
-			continue
-		var region := _hit_region(id)
-		if region.has_point(pos):
-			var d := pos.distance_squared_to(region.get_center())
-			if d < best_d:
-				best_d = d
-				best_id = id
-	if best_id != "":
-		_btn_touches[index] = best_id
-		_button_down(best_id)
+	for id in _btns:
+		var rect: Rect2 = _btns[id]["node"].get_global_rect()
+		if rect.has_point(pos):
+			var dd := pos.distance_squared_to(rect.get_center())
+			if dd < best_d:
+				best_d = dd
+				best = id
+	for id in _pills:
+		if _pills[id]["node"].get_global_rect().has_point(pos):
+			best = id
+			break
+	if best != "":
+		_btn_touches[index] = best
+		_button_down(best)
 		return
-	if _dp_touch == -1 and _nodes.has("dpad") and _hit_region("dpad").has_point(pos):
+	if _dp_touch == -1 and _dpad_node.get_global_rect().has_point(pos):
 		_dp_touch = index
 		_update_dpad(pos)
 		return
-	if _lstick_touch == -1 and _nodes.has("stick_left") and _hit_region("stick_left").has_point(pos):
-		_lstick_touch = index
+	if _l_touch == -1 and _sticks["left"]["pivot"].get_global_rect().has_point(pos):
+		_l_touch = index
 		_update_stick("left", pos)
 		return
-	if _rstick_touch == -1 and _nodes.has("stick_right") and _hit_region("stick_right").has_point(pos):
-		_rstick_touch = index
+	if _r_touch == -1 and _sticks["right"]["pivot"].get_global_rect().has_point(pos):
+		_r_touch = index
 		_update_stick("right", pos)
 
 
@@ -208,12 +243,13 @@ func _release(index: int) -> void:
 	if index == _dp_touch:
 		_dp_touch = -1
 		_pad.dpad(false, false, false, false)
-	elif index == _lstick_touch:
-		_lstick_touch = -1
-		_pad.stick_left(Vector2.ZERO)
-	elif index == _rstick_touch:
-		_rstick_touch = -1
-		_pad.stick_right(Vector2.ZERO)
+		_dpad_node.texture = _dpad_tex["idle"]
+	elif index == _l_touch:
+		_l_touch = -1
+		_reset_stick("left")
+	elif index == _r_touch:
+		_r_touch = -1
+		_reset_stick("right")
 	elif _btn_touches.has(index):
 		_button_up(_btn_touches[index])
 		_btn_touches.erase(index)
@@ -229,34 +265,63 @@ func _button_down(id: String) -> void:
 		"btn_Z": _pad.reset_action()
 		"pill_start": _pad.reset_action()
 		"pill_select": pass
-	if _nodes.has(id):
-		_nodes[id].modulate = Color(0.82, 0.82, 0.82)
+	if _btns.has(id):
+		_btns[id]["node"].texture = _btns[id]["pressed"]
+	elif _pills.has(id):
+		_pills[id]["node"].texture = _pills[id]["pressed"]
 
 
 func _button_up(id: String) -> void:
 	if id == "btn_X":
 		_pad.jump(false)
-	if _nodes.has(id):
-		_nodes[id].modulate = Color.WHITE
+	if _btns.has(id):
+		_btns[id]["node"].texture = _btns[id]["idle"]
+	elif _pills.has(id):
+		_pills[id]["node"].texture = _pills[id]["idle"]
 
 
 func _update_dpad(pos: Vector2) -> void:
-	var rect := _hit_region("dpad")
+	var rect: Rect2 = _dpad_node.get_global_rect()
 	var c := rect.get_center()
 	var nx := (pos.x - c.x) / (rect.size.x * 0.5)
 	var ny := (pos.y - c.y) / (rect.size.y * 0.5)
 	_pad.dpad(ny < -DEAD, ny > DEAD, nx < -DEAD, nx > DEAD)
+	# Show the dominant held direction.
+	var t := "idle"
+	if absf(ny) >= absf(nx):
+		if ny < -DEAD: t = "up"
+		elif ny > DEAD: t = "down"
+	else:
+		if nx < -DEAD: t = "left"
+		elif nx > DEAD: t = "right"
+	_dpad_node.texture = _dpad_tex[t]
 
 
 func _update_stick(side: String, pos: Vector2) -> void:
-	var rect := _hit_region("stick_" + side)
+	var s: Dictionary = _sticks[side]
+	var rect: Rect2 = s["pivot"].get_global_rect()
 	var c := rect.get_center()
 	var max_r := rect.size.x * STICK_MAX
 	var d := pos - c
 	if d.length() > max_r:
 		d = d.normalized() * max_r
-	var v := d / max_r  # -1..1, y down-positive (as the web sticks report)
+	# Ride the ball on the socket by shifting its anchored rect (in screen px = case-local px).
+	var ball: TextureRect = s["ball"]
+	ball.offset_left = d.x; ball.offset_top = d.y; ball.offset_right = d.x; ball.offset_bottom = d.y
+	ball.texture = s["pressed"]
+	var v := d / max_r
 	if side == "left":
 		_pad.stick_left(v)
 	else:
 		_pad.stick_right(v)
+
+
+func _reset_stick(side: String) -> void:
+	var s: Dictionary = _sticks[side]
+	var ball: TextureRect = s["ball"]
+	ball.offset_left = 0.0; ball.offset_top = 0.0; ball.offset_right = 0.0; ball.offset_bottom = 0.0
+	ball.texture = s["idle"]
+	if side == "left":
+		_pad.stick_left(Vector2.ZERO)
+	else:
+		_pad.stick_right(Vector2.ZERO)
