@@ -75,12 +75,18 @@ function strippedShellHTML() {
 
   // reference + case carry the cream body; capture them before the shell is made transparent.
   await shoot('#shell', 'reference_portrait.png', null, { t: 20, r: 20, b: 30, l: 20 });
-  await setVis(['.screen-wrap', '.controls-left', '.controls-right', '.controls-sys'], 'hidden');
+  // Keep the brandbar out of the case too — the console positions POCKET GB-1 / POWER itself,
+  // aligned to the display edges, so they are captured as their own assets below.
+  await setVis(['.screen-wrap', '.controls-left', '.controls-right', '.controls-sys', '.brandbar'], 'hidden');
   await shoot('#shell', 'case.png', null, { t: 4, r: 4, b: 4, l: 4 });
-  await setVis(['.screen-wrap', '.controls-left', '.controls-right', '.controls-sys'], '');
+  await setVis(['.screen-wrap', '.controls-left', '.controls-right', '.controls-sys', '.brandbar'], '');
 
   // Drop the case body so the controls capture with nothing cream behind them.
   await p.addStyleTag({ content: '#shell{background:transparent!important;box-shadow:none!important;} #shell::before{display:none!important;}' });
+
+  // Brand labels, captured on their own so the console can align them to the display corners.
+  await shoot('.brandbar .mark', 'brand_mark.png', null, { t: 3, r: 6, b: 3, l: 3 });
+  await shoot('.brandbar .power', 'brand_power.png', null, { t: 3, r: 3, b: 3, l: 6 });
 
   await shoot('.screen', 'bezel.png', 'screen', { t: 8, r: 8, b: 10, l: 8 });
   const glassBox = await boxOf('#glass');

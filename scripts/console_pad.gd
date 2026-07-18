@@ -116,6 +116,7 @@ func _build(world_texture: Texture2D) -> void:
 	var lcd := _rect(world_texture, g["x"], g["y"], g["w"], g["h"], true, true)
 	lcd.name = "Lcd"
 
+	_build_brand(g)
 	_build_dpad()
 	_build_buttons()
 	_build_sticks()
@@ -150,6 +151,25 @@ func _caption(word: String, cx: float, cy: float) -> void:
 	var path := ASSET_DIR + "cap_" + word + ".png"
 	if ResourceLoader.exists(path):
 		_at(load(path), cx, cy, CAP_W, CAP_H)
+
+
+## POCKET GB-1 aligned to the display's left edge, POWER to its right edge, in the band above it.
+func _build_brand(g: Dictionary) -> void:
+	var gl := float(g["x"])
+	var gr := float(g["x"]) + float(g["w"])
+	var y := 36.0
+	var mp := ASSET_DIR + "brand_mark.png"
+	if ResourceLoader.exists(mp):
+		var m: Texture2D = load(mp)
+		var mh := 15.0
+		var mw := mh * float(m.get_width()) / float(m.get_height())
+		_rect(m, gl, y - mh * 0.5, mw, mh)
+	var pp := ASSET_DIR + "brand_power.png"
+	if ResourceLoader.exists(pp):
+		var pt: Texture2D = load(pp)
+		var ph := 12.0
+		var pw := ph * float(pt.get_width()) / float(pt.get_height())
+		_rect(pt, gr - pw, y - ph * 0.5, pw, ph)
 
 
 func _build_dpad() -> void:
