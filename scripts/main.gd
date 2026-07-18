@@ -24,6 +24,9 @@ var _plan_modified_at: int = 0
 var _plan_poll: float = 0.0
 
 func _ready() -> void:
+	# The world root, so nodes deep in the tree (e.g. a knocked-out animal's ragdoll) can parent to
+	# something stable INSIDE the game SubViewport rather than the outer console shell.
+	add_to_group("world")
 	_setup_environment()
 	_setup_sun()
 
