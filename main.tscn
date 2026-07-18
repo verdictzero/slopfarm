@@ -8,7 +8,7 @@
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_dither"]
 shader = ExtResource("3_dither")
 shader_parameter/lut_tex = ExtResource("4_lut")
-shader_parameter/dither_strength = 0.09
+shader_parameter/dither_strength = 0.17
 shader_parameter/pixel_size = 2.0
 shader_parameter/outline_strength = 1.0
 shader_parameter/outline_threshold = 0.18
