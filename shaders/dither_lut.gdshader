@@ -24,10 +24,11 @@ const float LUT_SIZE = 64.0;
 const float LUT_TILES = 8.0;
 const float LUT_WIDTH = 512.0;
 
-// The 2x2 Bayer matrix, generated rather than looked up: the coarse ordered-dither the DMG reads
-// best with. (bayer4/bayer8 stacked more thresholds for a finer pattern, but that muddied the
-// four-shade look, so we dither at 2x2.)
+// The 4x4 Bayer matrix, built from the 2x2 by recursion rather than looked up. Dynamically
+// indexing a const array makes Mesa's V3D compiler emit a deep select chain; this recursion is a
+// bit-for-bit identical matrix without it.
 float bayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
+float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
 
 vec3 palette_snap(vec3 c) {
 	c = clamp(c, 0.0, 1.0);
@@ -42,6 +43,6 @@ vec3 palette_snap(vec3 c) {
 
 void fragment() {
 	vec3 c = texture(screen_tex, SCREEN_UV).rgb;
-	float threshold = bayer2(FRAGCOORD.xy / pixel_size) - 0.5;
+	float threshold = bayer4(FRAGCOORD.xy / pixel_size) - 0.5;
 	COLOR = vec4(palette_snap(c + threshold * dither_strength), 1.0);
 }

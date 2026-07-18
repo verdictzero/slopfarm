@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Bake the RGB->palette lookup table for a 16-shade monochrome Game Boy green palette.
+"""Bake the RGB->palette lookup table for the Game Boy (DMG) green palette, expanded to 16 shades.
 
 Run from the project root:  python3 tools/gen_gameboy_lut.py
 
 Overwrites:
-  shaders/lut_512.png      the 64x64x64 cube the dither shader snaps through, so every colour
-                           in the frame maps to the nearest of 16 greens along the DMG gradient.
+  shaders/lut_512.png      the 64x64x64 cube the dither shader snaps through, so every colour in
+                           the frame maps to the nearest of the 16 DMG greens.
   shaders/palette_512.png  a documentation-only swatch of the 16 shades (nothing samples it).
+
+The same four hardware DMG blue-green anchors as the 4-shade palette, just interpolated into a
+16-step ramp: a smoother monochrome Game Boy gradient, still pure green. Everything in the frame
+(hearts, the pickup ribbon, the gold wand) snaps to a green shade — that IS the DMG screen.
 
 The heavy work — nearest-colour mapping of the whole RGB cube in Oklab — is reused from
 gen_palette_lut.build_lut; this file only swaps in the 16-colour palette.
@@ -20,16 +24,14 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gen_palette_lut import build_lut
 
-# The four hardware Game Boy (DMG) blue-green shades, dark -> light. The real screen only ever
-# showed these four, and the Bayer dither in the shader blends them into the illusion of more —
-# so this is the most hardware-accurate look, not a smooth 16-step ramp.
+# The four hardware Game Boy (DMG) blue-green shades, dark -> light, interpolated into 16.
 GB_ANCHORS = [
     (0x08, 0x18, 0x20),
     (0x34, 0x68, 0x56),
     (0x88, 0xc0, 0x70),
     (0xe0, 0xf8, 0xd0),
 ]
-COLORS = 4
+COLORS = 16
 
 
 def gameboy_palette(n=COLORS):
@@ -41,17 +43,17 @@ def gameboy_palette(n=COLORS):
 
 
 def main():
-    palette = gameboy_palette()
-    print("gameboy palette (%d shades):" % len(palette))
-    for c in palette:
+    pal = gameboy_palette()
+    print("gameboy DMG palette (%d shades):" % len(pal))
+    for c in pal:
         print("  #%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2])))
 
-    # Doc-only swatch: each shade a 16x16 block in a strip.
-    strip = np.repeat(palette[None, :, :], 16, axis=0)
-    strip = np.repeat(strip, 16, axis=1)
-    Image.fromarray(strip, "RGB").save("shaders/palette_512.png")
+    # Doc-only swatch: each shade a 16x16 block, two rows of eight.
+    grid = pal.reshape(2, 8, 3)
+    grid = np.repeat(np.repeat(grid, 16, axis=0), 16, axis=1)
+    Image.fromarray(grid, "RGB").save("shaders/palette_512.png")
 
-    Image.fromarray(build_lut(palette), "RGB").save("shaders/lut_512.png")
+    Image.fromarray(build_lut(pal), "RGB").save("shaders/lut_512.png")
     print("wrote shaders/palette_512.png and shaders/lut_512.png")
 
 

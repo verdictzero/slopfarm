@@ -42,8 +42,8 @@ const CARRY_TURN_MAX := 12.0
 ## Parting velocities: a gentle set-down on drop, a proper punt on throw.
 const DROP_SPEED := 1.5
 const THROW_SPEED := 12.0
-## Swing duration, seconds.
-const SWING_TIME := 0.28
+## Swing duration, seconds. Longer than a flick so the arc has time to read.
+const SWING_TIME := 0.42
 
 ## Glue trade. How near the factory dock you load finished sacks, how near a town market you
 ## sell them, how much each sack fetches, and how near the truck you have to be to climb in.
@@ -60,9 +60,15 @@ const WAND_SCENE := "res://models/heart_wand.glb"
 const WAND_REST := Vector3(0.30, -0.30, -0.55)
 const WAND_REST_ROT := Vector3(-58.0, 12.0, 8.0)
 const WAND_HEIGHT := 0.62
-## How far the swing pitches the heart down-and-forward through its arc (degrees). Negative
-## keeps the tip going away from the player and toward the ground — a forward chop.
-const SWING_PITCH := -55.0
+## The swing is a big, multi-axis arc, not a flat pitch: a quick wind-up, then a down-and-across
+## chop with a twist and a forward lunge, easing into a follow-through. Pitch drives the tip toward
+## the ground (negative), yaw sweeps it across the view, roll twists the heart over, and MOVE
+## lunges the whole wand down-left-forward through the arc before it settles back to rest.
+const SWING_PITCH := -98.0
+const SWING_YAW := -30.0
+const SWING_ROLL := 26.0
+const SWING_WINDUP := 24.0
+const SWING_MOVE := Vector3(-0.06, -0.15, -0.24)
 
 ## Gold handle, red heart.
 const WAND_GOLD := Color(0.83, 0.63, 0.19)
@@ -74,6 +80,12 @@ var _pitch: float = 0.0
 var _wand: Node3D
 var _swing: float = 0.0
 var _carried: HorseRagdoll
+## Wand effects: a tip marker the hearts puff from, and the gravity-gun pickup ribbon.
+var _wand_tip: Node3D
+var _hearts: CPUParticles3D
+var _ribbon: MeshInstance3D
+var _ribbon_mesh: ImmediateMesh
+var _ribbon_t: float = 0.0
 
 ## The glue economy: sacks currently carried and money earned. The truck the player is driving,
 ## if any (while set, movement is handed to it and the player rides along as the streaming
@@ -245,14 +257,25 @@ func _process(delta: float) -> void:
 			rotate_y(-look.x * touch_look_sensitivity)
 			_pitch = clampf(_pitch - look.y * touch_look_sensitivity, -1.4, 1.4)
 			camera.rotation.x = _pitch
-	# Swing the wand: pitch it down through an arc and settle it back to rest.
+	# Swing the wand through its organic arc, or hold it at rest.
 	if _wand != null:
 		if _swing > 0.0:
 			_swing -= delta
-			var arc := sin((1.0 - clampf(_swing / SWING_TIME, 0.0, 1.0)) * PI)
-			_wand.rotation_degrees = WAND_REST_ROT + Vector3(SWING_PITCH * arc, 0.0, 0.0)
+			var t := 1.0 - clampf(_swing / SWING_TIME, 0.0, 1.0)   # 0 -> 1 over the swing
+			# A brief wind-up (tip pulls up/back), then the main arc — delayed so the wind-up leads,
+			# and a smooth sine so it accelerates down and eases through the follow-through.
+			var wind := 1.0 - smoothstep(0.0, 0.16, t)
+			var arc := sin(clampf((t - 0.10) / 0.90, 0.0, 1.0) * PI)
+			_wand.rotation_degrees = WAND_REST_ROT + Vector3(
+					SWING_PITCH * arc - SWING_WINDUP * wind, SWING_YAW * arc, SWING_ROLL * arc)
+			_wand.position = WAND_REST + SWING_MOVE * arc + Vector3.UP * (0.05 * wind)
 		else:
 			_wand.rotation_degrees = WAND_REST_ROT
+			_wand.position = WAND_REST
+	# Keep the (top-level) heart emitter parked on the wand tip in world space.
+	if _hearts != null and _wand_tip != null:
+		_hearts.global_position = _wand_tip.global_position
+	_update_ribbon()
 	_update_hud()
 
 
@@ -374,11 +397,64 @@ func _drive_carried() -> void:
 		_carried.angular_velocity = Vector3.ZERO
 
 
+# ---- wand pickup ribbon -----------------------------------------------------
+
+## Shown only while carrying: a pink energy ribbon from the wand tip to the body, redrawn each
+## frame — wavy and pulsing, billboarded at the camera, like the Half-Life 2 gravity gun's beam.
+func _update_ribbon() -> void:
+	if _ribbon == null:
+		return
+	var active := _wand_tip != null and _carried != null and is_instance_valid(_carried)
+	_ribbon.visible = active
+	if not active:
+		return
+	_ribbon_t += get_process_delta_time() * 10.0
+	_build_ribbon(_wand_tip.global_position, _carried.global_position + Vector3.UP * 0.25)
+
+
+func _build_ribbon(a: Vector3, b: Vector3) -> void:
+	_ribbon_mesh.clear_surfaces()
+	var beam := b - a
+	var length := beam.length()
+	if length < 0.05:
+		return
+	var dir := beam / length
+	var cam := camera.global_position
+	const SEGS := 16
+	_ribbon_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	for i in SEGS + 1:
+		var f := float(i) / float(SEGS)
+		var p := a.lerp(b, f)
+		# Ribbon lies in the plane facing the camera: `side` gives it width, `up` carries the wander.
+		var view := (cam - p).normalized()
+		var side := dir.cross(view)
+		side = side.normalized() if side.length() > 1e-4 else Vector3.RIGHT
+		var up := side.cross(dir).normalized()
+		var env := sin(f * PI)                          # fades the wander + width to zero at the ends
+		var wig := (sin(f * 20.0 + _ribbon_t) * 0.06 + sin(f * 8.0 - _ribbon_t * 1.6) * 0.05) * length * 0.18 * env
+		p += up * wig
+		var w := 0.035 + 0.09 * env
+		var pulse := 0.5 + 0.5 * sin(f * 26.0 - _ribbon_t * 3.0)
+		var col := Color(1.0, 0.5, 0.78, 0.4 + 0.6 * pulse * env)
+		_ribbon_mesh.surface_set_color(col)
+		_ribbon_mesh.surface_add_vertex(p + side * w)
+		_ribbon_mesh.surface_set_color(col)
+		_ribbon_mesh.surface_add_vertex(p - side * w)
+	_ribbon_mesh.surface_end()
+
+
 # ---- actions ----------------------------------------------------------------
 
 func _attack() -> void:
 	if _swing <= 0.0:
 		_swing = SWING_TIME
+	# Heart particles puff out of the wand's tip on every swing. Park the (top-level) emitter on the
+	# tip first, since restart() emits immediately at the emitter's current world position.
+	if _hearts != null:
+		if _wand_tip != null:
+			_hearts.global_position = _wand_tip.global_position
+		_hearts.restart()
+		_hearts.emitting = true
 	# The nearest living horse inside the wand's reach and forward cone takes the hit.
 	var origin := camera.global_position
 	var forward := -camera.global_transform.basis.z
@@ -550,6 +626,77 @@ func _spawn_wand() -> void:
 	_fit_height(_wand, WAND_HEIGHT)
 	_wand.position = WAND_REST
 	_wand.rotation_degrees = WAND_REST_ROT
+	_spawn_wand_fx()
+
+
+## Effects hung off the wand: a tip marker at the heart, a heart-particle puff for swings, and the
+## pink pickup ribbon.
+func _spawn_wand_fx() -> void:
+	var bounds := _local_aabb(_wand)
+	_wand_tip = Node3D.new()
+	_wand_tip.position = Vector3(bounds.get_center().x, bounds.position.y + bounds.size.y, bounds.get_center().z)
+	_wand.add_child(_wand_tip)
+
+	_hearts = CPUParticles3D.new()
+	_hearts.emitting = false
+	_hearts.one_shot = true
+	_hearts.explosiveness = 0.9
+	_hearts.amount = 16
+	_hearts.lifetime = 0.75
+	_hearts.local_coords = false
+	_hearts.direction = Vector3(0.0, 1.0, 0.0)
+	_hearts.spread = 55.0
+	_hearts.initial_velocity_min = 1.2
+	_hearts.initial_velocity_max = 2.8
+	_hearts.gravity = Vector3(0.0, -1.6, 0.0)
+	# top_level so the wand's large model scale does NOT multiply the particle size; we drive its
+	# world position to the tip each frame instead (see _process).
+	_hearts.top_level = true
+	_hearts.scale_amount_min = 0.14
+	_hearts.scale_amount_max = 0.24
+	var shrink := Curve.new()
+	shrink.add_point(Vector2(0.0, 1.0))
+	shrink.add_point(Vector2(0.7, 0.9))
+	shrink.add_point(Vector2(1.0, 0.0))
+	_hearts.scale_amount_curve = shrink
+	_hearts.mesh = _heart_particle_mesh()
+	# Parented to the UNSCALED camera (not the wand, which is scaled ~12x to size the model), so the
+	# particles are their intended size; _process drives the emitter to the tip in world space.
+	camera.add_child(_hearts)
+
+	_ribbon_mesh = ImmediateMesh.new()
+	_ribbon = MeshInstance3D.new()
+	_ribbon.mesh = _ribbon_mesh
+	_ribbon.material_override = _ribbon_material()
+	_ribbon.top_level = true            # verts built in world space
+	_ribbon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_ribbon.visible = false
+	add_child(_ribbon)
+
+
+func _heart_particle_mesh() -> Mesh:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0, 1.0)
+	var m := StandardMaterial3D.new()
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_texture = load("res://sprites/heart_particle.png")
+	m.albedo_color = Color(1.0, 0.32, 0.5)    # the palette snaps this to heart-red/pink
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	quad.material = m
+	return quad
+
+
+func _ribbon_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD    # energy glow
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(1.0, 0.4, 0.72)          # pink
+	return m
 
 
 ## Repaints the wand model: the shaft ("wand") gold and metallic, the "heart" a flat red. Set as
