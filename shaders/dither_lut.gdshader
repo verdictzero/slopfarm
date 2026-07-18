@@ -31,10 +31,10 @@ uniform float pixel_size : hint_range(1.0, 8.0) = 1.0;
 uniform float outline_strength : hint_range(0.0, 1.0) = 1.0;
 // Sobel magnitude an edge must clear to start drawing, and the soft ramp above it. Lower =
 // more edges (creases as well as silhouettes); higher = only the strong borders.
-uniform float outline_threshold : hint_range(0.0, 1.0) = 0.16;
+uniform float outline_threshold : hint_range(0.0, 1.0) = 0.18;
 uniform float outline_softness : hint_range(0.0, 0.5) = 0.05;
 // Sample spread in screen pixels — how thick the border reads.
-uniform float outline_width : hint_range(0.5, 4.0) = 1.4;
+uniform float outline_width : hint_range(0.5, 4.0) = 0.9;
 // Where an edge pixel is pushed before the palette snap (a near-black green so it lands on the
 // darkest Game Boy shade).
 uniform vec3 outline_color : source_color = vec3(0.02, 0.05, 0.03);

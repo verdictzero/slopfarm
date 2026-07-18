@@ -117,11 +117,11 @@ func _is_mobile() -> bool:
 			or OS.has_environment("SLOPFARM_TOUCH")
 
 
-## Raises the on-screen controls on its own CanvasLayer (below the dither post-process at 100,
-## above the HUD at 50) and wires each button to the matching action.
+## Raises the on-screen controls on its own CanvasLayer, ABOVE the dither post-process (100) so
+## the buttons stay crisp in front of the palette snap, and wires each button to its action.
 func _spawn_touch_controls() -> void:
 	var layer := CanvasLayer.new()
-	layer.layer = 60
+	layer.layer = 115
 	add_child(layer)
 	_touch = TouchControls.new()
 	layer.add_child(_touch)
@@ -531,12 +531,13 @@ func _wand_mat(color: Color, metallic: float, roughness: float) -> StandardMater
 
 
 ## A minimal crosshair so the wand and the pickup can actually be aimed. Its own CanvasLayer,
-## below the dither post-process (layer 100), so the dither still passes over the whole frame.
+## ABOVE the dither post-process (layer 100), so the HUD draws in front of the palette snap and
+## stays crisp rather than being dithered and mapped to greens with the rest of the frame.
 func _spawn_crosshair() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
 	var layer := CanvasLayer.new()
-	layer.layer = 50
+	layer.layer = 110
 	add_child(layer)
 	var dot := ColorRect.new()
 	dot.color = Color(0.9, 0.9, 0.9, 0.6)
