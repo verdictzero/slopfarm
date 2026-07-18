@@ -97,6 +97,8 @@ var terrain: TerrainManager
 
 
 func _ready() -> void:
+	# Joined so the outer shell can find us across the game SubViewport boundary (same SceneTree).
+	add_to_group("player")
 	camera.far = camera_far
 	_tune_collision()
 	# Pick the input scheme. In the Game Boy web shell the on-screen pad drives the game (and the
@@ -105,7 +107,9 @@ func _ready() -> void:
 	if _use_gb_shell():
 		_spawn_gb_shell_input()
 	elif _is_mobile():
-		_spawn_touch_controls()
+		# The native portrait console (shell.gd) builds the controls OUTSIDE the game SubViewport and
+		# hands them over via set_input_source(); do not raise the old in-viewport faceplate here.
+		pass
 	elif DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_spawn_wand()
@@ -115,9 +119,9 @@ func _ready() -> void:
 ## Whether this build should show touch controls: a real touch device, or an explicitly mobile
 ## export (so it is right in the APK even on a device that also reports a mouse).
 func _is_mobile() -> bool:
-	# SLOPFARM_TOUCH forces the touch controls on for previewing them on a desktop build.
-	return OS.has_feature("mobile") or DisplayServer.is_touchscreen_available() \
-			or OS.has_environment("SLOPFARM_TOUCH")
+	# Defer to the one predicate the shell also uses, so the two never drift: the shell builds the
+	# console exactly when this is true, and we skip self-spawning to await its injection.
+	return TouchControls.is_console()
 
 
 ## Whether input comes from the Game Boy HTML shell. True for any web export (the web build only
@@ -138,8 +142,20 @@ func _spawn_gb_shell_input() -> void:
 	_touch.respawn_pressed.connect(_respawn)
 
 
+## Called by the native portrait console (shell.gd) to hand us the input source it built outside the
+## game SubViewport. A ShellInput IS-A TouchControls, so this mirrors what the self-spawned schemes
+## wire up and nothing downstream (movement, look, truck, the actions) knows the difference.
+func set_input_source(src: TouchControls) -> void:
+	_touch = src
+	src.hit_pressed.connect(_primary_action)
+	src.interact_pressed.connect(_interact)
+	src.truck_pressed.connect(_toggle_truck)
+	src.respawn_pressed.connect(_respawn)
+
+
 ## Raises the on-screen controls on its own CanvasLayer, ABOVE the dither post-process (100) so
 ## the buttons stay crisp in front of the palette snap, and wires each button to its action.
+## Unused on the native console path (shell.gd injects instead); kept for reference/fallback.
 func _spawn_touch_controls() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 115

@@ -1,34 +1,31 @@
-[gd_scene format=3 uid="uid://8qmm1my4ofro"]
+[gd_scene load_steps=3 format=3 uid="uid://c8shellgbmain"]
 
-[ext_resource type="Script" uid="uid://csj4huojhrnba" path="res://scripts/main.gd" id="1_main"]
-[ext_resource type="Script" uid="uid://dgsb78xh0k40u" path="res://scripts/terrain_manager.gd" id="2_terr"]
-[ext_resource type="Shader" uid="uid://cxp78vjfx6tfn" path="res://shaders/dither_lut.gdshader" id="3_dither"]
-[ext_resource type="Texture2D" uid="uid://dtorn7vt6pc1b" path="res://shaders/lut_512.png" id="4_lut"]
+[ext_resource type="Script" path="res://scripts/shell.gd" id="1_shell"]
+[ext_resource type="PackedScene" uid="uid://8qmm1my4ofro" path="res://world.tscn" id="2_world"]
 
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_dither"]
-shader = ExtResource("3_dither")
-shader_parameter/lut_tex = ExtResource("4_lut")
-shader_parameter/dither_strength = 0.17
-shader_parameter/pixel_size = 2.0
+[node name="Shell" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_shell")
 
-[node name="Main" type="Node3D" unique_id=1035770318]
-script = ExtResource("1_main")
+[node name="World" type="SubViewport" parent="."]
+size = Vector2i(640, 360)
+render_target_update_mode = 4
+own_world_3d = true
+msaa_3d = 0
+screen_space_aa = 0
+use_taa = false
+use_debanding = false
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=623522097]
+[node name="WorldRoot" parent="World" instance=ExtResource("2_world")]
 
-[node name="Sun" type="DirectionalLight3D" parent="." unique_id=689962234]
-
-[node name="TerrainManager" type="Node3D" parent="." unique_id=1460029186]
-script = ExtResource("2_terr")
-
-[node name="PostProcess" type="CanvasLayer" parent="." unique_id=47170318]
-layer = 100
-
-[node name="BackBufferCopy" type="BackBufferCopy" parent="PostProcess" unique_id=48469444]
-copy_mode = 2
-
-[node name="Dither" type="ColorRect" parent="PostProcess" unique_id=801039493]
-material = SubResource("ShaderMaterial_dither")
+[node name="Display" type="Control" parent="."]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0

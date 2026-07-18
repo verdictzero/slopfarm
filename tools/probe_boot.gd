@@ -43,7 +43,7 @@ class _Runner:
 		return null
 
 	func _run() -> void:
-		var main := (load("res://main.tscn") as PackedScene).instantiate()
+		var main := (load("res://world.tscn") as PackedScene).instantiate()
 		# Make it the current scene, the way the engine does when it autoloads main_scene: a
 		# knocked-out cow parents its ragdoll to get_tree().current_scene, so this has to be set.
 		p.root.add_child(main)

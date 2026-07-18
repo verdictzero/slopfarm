@@ -42,7 +42,7 @@ class _Runner:
 		return null
 
 	func _run() -> void:
-		var main := (load("res://main.tscn") as PackedScene).instantiate()
+		var main := (load("res://world.tscn") as PackedScene).instantiate()
 		p.root.add_child(main)
 		p.current_scene = main
 		for i in 40:

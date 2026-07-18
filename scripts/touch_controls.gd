@@ -15,6 +15,16 @@ class_name TouchControls
 ## key at once. It exposes move_vector / jump_held / sprint / take_look() and fires a signal per
 ## action key, exactly as before, so nothing downstream knows the skin changed.
 
+## Which input path this build uses. Web is checked FIRST so a phone browser (which is BOTH web and
+## touch) drives the game from the HTML shell and never also raises the in-engine console.
+static func is_web() -> bool:
+	return OS.has_feature("web") or OS.has_environment("SLOPFARM_GBSHELL")
+static func is_console() -> bool:
+	# Deliberately NOT keyed on DisplayServer.is_touchscreen_available(): that fires on desktop
+	# touchscreen laptops / 2-in-1s, which would hand a mouse+keyboard user the portrait phone
+	# faceplate. Only a real handheld export (or the explicit preview flag) gets the console.
+	return not is_web() and (OS.has_feature("mobile") or OS.has_environment("SLOPFARM_TOUCH"))
+
 signal hit_pressed
 signal interact_pressed
 signal truck_pressed
