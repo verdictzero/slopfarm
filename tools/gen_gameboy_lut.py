@@ -20,17 +20,16 @@ from PIL import Image
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gen_palette_lut import build_lut
 
-# Classic Game Boy (DMG) green gradient, dark -> light, interpolated into a smooth monochrome
-# ramp: a deep bottle-green shadow up through the screen's mid greens to a pale phosphor white.
+# The four hardware Game Boy (DMG) blue-green shades, dark -> light. The real screen only ever
+# showed these four, and the Bayer dither in the shader blends them into the illusion of more —
+# so this is the most hardware-accurate look, not a smooth 16-step ramp.
 GB_ANCHORS = [
     (0x08, 0x18, 0x20),
-    (0x25, 0x49, 0x38),
     (0x34, 0x68, 0x56),
-    (0x60, 0x94, 0x60),
     (0x88, 0xc0, 0x70),
     (0xe0, 0xf8, 0xd0),
 ]
-COLORS = 16
+COLORS = 4
 
 
 def gameboy_palette(n=COLORS):
