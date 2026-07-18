@@ -2,7 +2,7 @@ extends Node3D
 class_name TreeScatter
 ## Sows procedural trees across the countryside in natural groves, streamed in tiles around the
 ## player exactly like TerrainGrass. Where the grass fills the ground, this fills the skyline:
-## clumps of conifers, oaks, poplars and scrub standing on the grassland out to a good distance,
+## stands of pine — young saplings through tall old trees — on the grassland out to a good distance,
 ## so the world beyond the farm reads as wooded country rolling toward the towns.
 ##
 ## Groves, not an even sprinkle. A low-frequency "grove" noise decides where woods are ALLOWED,
@@ -32,6 +32,7 @@ const FADE := 30.0
 ## clump. Higher = fewer, tighter stands.
 const GROVE_BEGIN := 0.54
 const GROVE_FULL := 0.74
+## Four pines of increasing size/age; each tile also jitters per-instance scale on top.
 const TREE_VARIANTS := 4
 
 var _terrain: TerrainManager
@@ -158,7 +159,7 @@ func _build_tile(tile: Vector2i) -> void:
 			var h := _terrain.height_at(x, z)
 			var v := rng.randi_range(0, TREE_VARIANTS - 1)
 			var xf := Transform3D()
-			xf.basis = Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.8, 1.5))
+			xf.basis = Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.85, 1.2))
 			xf.origin = Vector3(x, h - 0.1, z)
 			if not placed.has(v):
 				placed[v] = []
@@ -238,56 +239,31 @@ func _clear_all() -> void:
 # ---- tree meshes ------------------------------------------------------------
 
 const BARK := Color(0.34, 0.24, 0.16)
-const BARK_DK := Color(0.26, 0.18, 0.12)
 
 
+## Four pines, small to tall — a young sapling, two mid trees, and a big old pine. The size classes
+## differ in both scale and tier count so a stand reads as mixed ages, not one mesh at two scales.
 func _build_tree(kit: MeshKit, variant: int) -> ArrayMesh:
 	kit.begin()
 	match variant:
-		0: _tree_conifer(kit)
-		1: _tree_oak(kit)
-		2: _tree_poplar(kit)
-		_: _tree_scrub(kit)
+		0: _tree_pine(kit, 0.5, 3)
+		1: _tree_pine(kit, 0.72, 4)
+		2: _tree_pine(kit, 0.95, 4)
+		_: _tree_pine(kit, 1.2, 5)
 	return kit.commit()
 
 
-## A conifer: a tapered bark trunk and three stacked cones of dark needle foliage.
-func _tree_conifer(kit: MeshKit) -> void:
+## A pine scaled by `s` (1.0 ~= 7 m) from a tapered bark trunk and `tiers` stacked needle cones,
+## darkest at the base and paler toward the crown. More tiers + more scale reads as an older tree.
+func _tree_pine(kit: MeshKit, s: float, tiers: int) -> void:
 	var green := Color(0.16, 0.34, 0.18)
-	kit.cylinder(Vector3(0, 1.4, 0), 0.28, 2.8, 6, BARK)
-	kit.cone(Vector3(0, 2.2, 0), 2.0, 2.4, 8, green.darkened(0.06))
-	kit.cone(Vector3(0, 3.6, 0), 1.6, 2.4, 8, green)
-	kit.cone(Vector3(0, 5.0, 0), 1.1, 2.4, 8, green.lightened(0.06))
-	kit.cone(Vector3(0, 6.3, 0), 0.6, 1.6, 8, green.lightened(0.1))
-
-
-## A broadleaf oak: a stout trunk, a few branches, and a rounded canopy of overlapping spheres.
-func _tree_oak(kit: MeshKit) -> void:
-	var green := Color(0.26, 0.42, 0.20)
-	kit.cylinder(Vector3(0, 1.6, 0), 0.38, 3.2, 6, BARK)
-	for k in 3:
-		var a := TAU * float(k) / 3.0 + 0.5
-		kit.pipe(Vector3(0, 2.6, 0), Vector3(cos(a) * 1.3, 3.9, sin(a) * 1.3), 0.14, 5, BARK_DK)
-	kit.sphere(Vector3(0, 4.4, 0), 2.1, 3, 8, green)
-	kit.sphere(Vector3(-1.2, 3.9, 0.6), 1.5, 3, 7, green.darkened(0.06))
-	kit.sphere(Vector3(1.1, 4.1, -0.5), 1.5, 3, 7, green.lightened(0.06))
-	kit.sphere(Vector3(0.2, 5.3, 0.2), 1.4, 3, 7, green.lightened(0.1))
-
-
-## A poplar: a slim, very tall trunk with a narrow columnar crown of stacked small spheres.
-func _tree_poplar(kit: MeshKit) -> void:
-	var green := Color(0.30, 0.45, 0.22)
-	kit.cylinder(Vector3(0, 2.6, 0), 0.24, 5.2, 6, BARK.lightened(0.04))
-	for k in 5:
-		var y := 3.2 + float(k) * 1.1
-		var r := 1.3 - float(k) * 0.16
-		kit.sphere(Vector3(0, y, 0), r, 3, 7, green.lightened(0.03 * k))
-
-
-## Low scrub: a short trunk and a wide, low tangle of foliage balls.
-func _tree_scrub(kit: MeshKit) -> void:
-	var green := Color(0.32, 0.40, 0.20)
-	kit.cylinder(Vector3(0, 0.5, 0), 0.24, 1.0, 5, BARK)
-	kit.sphere(Vector3(0, 1.3, 0), 1.5, 3, 8, green)
-	kit.sphere(Vector3(-1.0, 1.0, 0.4), 1.1, 3, 7, green.darkened(0.05))
-	kit.sphere(Vector3(0.9, 1.1, -0.5), 1.1, 3, 7, green.lightened(0.05))
+	kit.cylinder(Vector3(0, 1.4 * s, 0), 0.28 * s, 2.8 * s, 6, BARK)
+	var y := 2.2 * s
+	var r := 2.0 * s
+	for k in tiers:
+		var last := k == tiers - 1
+		var ch := (1.6 if last else 2.4) * s
+		var shade := green.darkened(0.06) if k == 0 else green.lightened(0.03 * float(k))
+		kit.cone(Vector3(0, y, 0), r, ch, 8, shade)
+		y += 1.4 * s
+		r = maxf(0.35 * s, r * 0.68)
