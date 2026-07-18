@@ -374,23 +374,42 @@ nothing detectable (identical medians on every pass that has structures in view)
 
 ## The palette and dither
 
-`tools/gen_palette_lut.py` generates both committed PNGs in `shaders/` — rerun it after
-changing the palette:
+The whole world is redrawn as an old dot-matrix LCD in the **same 16 Game Boy greens the
+menu is painted in**. `scripts/gb_ui.gd` tokens the LCD interface in the classic DMG
+"pea-green" ramp (`INK #0f380f` up to the lit highlight `#cfe27a`); the post-process snaps
+the world to that same ramp, so the dithered scene and the UI chrome are one screen rather
+than two different greens.
 
-    python3 tools/gen_palette_lut.py     # needs numpy + pillow
+`tools/gen_menu_palette_lut.py` bakes both committed PNGs in `shaders/` from those eight
+design tokens — rerun it after changing the menu greens:
 
-- **`palette_512.png`** — 512 colours as 31 hue-shifted ramps plus 16 greys, reference
-  only. Ramps shift toward blue as they darken and toward yellow as they lighten, with
-  saturation peaking in the midtones. Channels land on a 5-bit ladder (15-bit-era
-  colour). Leftover slots go where the palette is thinnest, by farthest-point insertion.
+    python3 tools/gen_menu_palette_lut.py     # needs numpy + pillow
+
+- **`palette_512.png`** — the 16 shades as a reference swatch, nothing samples it.
 - **`lut_512.png`** — the lookup table the shader actually samples: a 64×64×64 RGB cube
-  flattened to an 8×8 grid of blue slices, each cell pre-solved (in Oklab) to the
-  nearest palette entry. This turns a 512-way search into one texture fetch.
+  flattened to an 8×8 grid of blue slices, each cell pre-solved (in Oklab) to the nearest
+  of the 16 greens. This turns a 16-way search into one texture fetch.
 
-`shaders/dither_lut.gdshader` adds an 8×8 Bayer offset per pixel and then snaps via the
-LUT. The offset is what breaks quantisation into a pattern instead of flat banding.
-A screen-space pattern depends on pixel position, so this step cannot itself be baked
-into a colour-indexed table.
+The eight tokens are only a spine: the tool walks them in Oklab (perceptually even steps,
+not raw RGB) and resamples to 16 shades, dark → light, so the endpoints land exactly on the
+menu's darkest and lightest greens and the ramp passes through every token between. It reuses
+`gen_palette_lut.py`'s `build_lut` (the Oklab nearest-colour engine); that older script and
+its 512-colour retro palette are kept only as that shared engine.
+
+`shaders/dither_lut.gdshader` does three things, in order:
+
+- **Pseudo pixels.** The native buffer is diced into a hard grid of `grid_size × grid_size`
+  cells (default 3). Each cell samples the world once, at its centre, so a whole cell carries
+  one colour — the chunky LCD dot, independent of how far the buffer is upscaled afterward.
+- **Ordered dither + palette snap.** Each cell is nudged by a 4×4 Bayer threshold keyed to the
+  cell (not the native pixel, so the pattern lives at dot resolution) and snapped through the
+  LUT. The offset is what breaks quantisation into a pattern instead of flat banding; being
+  screen-position dependent, it cannot itself be baked into the colour-indexed table.
+- **Hard grid.** The leading edge of every dot drops down the green ramp and re-snaps, drawing
+  the darker lattice between dots — visible over lit areas, vanishing over already-dark ones,
+  the way the unlit gaps read on a real reflective LCD. Because it re-snaps, gap pixels are
+  still palette greens. `grid_size`, `grid_gap` and `grid_strength` are shader uniforms, set
+  on the `Dither` material in `world.tscn`.
 
 ### Load-bearing settings
 
