@@ -301,6 +301,10 @@ func _primary_action() -> void:
 func _toggle_menu() -> void:
 	if _dismiss_title():
 		return
+	# Not while driving: the driver is pinned to the truck, so the menu's freeze/settle pass would
+	# fight that pin against the truck's collision box. Get out of the truck (F) first.
+	if _driving != null:
+		return
 	if _gbui == null:
 		return
 	_menu_open = not _menu_open
@@ -408,6 +412,17 @@ func _physics_process(delta: float) -> void:
 	# Fully frozen behind the boot title.
 	if _title_active():
 		return
+	# While driving, hand movement to the truck and ride along on top of it. The player is the
+	# world's streaming anchor, so pinning it to the truck is what keeps terrain, grass and trees
+	# building around the truck as it drives off toward the towns. Checked BEFORE the menu freeze:
+	# the pinned driver must never go through move_and_slide, or the truck's solid collision box
+	# would depenetrate and fling it off the truck (taking the streaming anchor with it).
+	if _driving != null:
+		if is_instance_valid(_driving):
+			velocity = Vector3.ZERO
+			global_position = _driving.global_position + Vector3.UP * 1.0
+			return
+		_driving = null
 	# The menu freezes play: bleed off horizontal motion and let gravity settle the player, but take
 	# no move/jump input while it is up.
 	if _menu_open:
@@ -417,15 +432,6 @@ func _physics_process(delta: float) -> void:
 			velocity.y -= gravity * delta
 		move_and_slide()
 		return
-	# While driving, hand movement to the truck and ride along on top of it. The player is the
-	# world's streaming anchor, so pinning it to the truck is what keeps terrain, grass and trees
-	# building around the truck as it drives off toward the towns.
-	if _driving != null:
-		if is_instance_valid(_driving):
-			velocity = Vector3.ZERO
-			global_position = _driving.global_position + Vector3.UP * 1.0
-			return
-		_driving = null
 
 	var jump := Input.is_physical_key_pressed(KEY_SPACE) or (_touch != null and _touch.jump_held)
 	if not is_on_floor():
