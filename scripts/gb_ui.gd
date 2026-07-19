@@ -44,7 +44,7 @@ const SHADOW_OFF := Vector2(-1.0, 1.0)   # drop shadow: one design pixel down-le
 const DIGIT_FS := 8          # capsule glyph font size (Press Start 2P native cell)
 const LABEL_FS := 8          # HUD label / unit-tag font size
 const TITLE_FS := 8          # panel title-bar font size
-const LIST_FS := 10          # menu list entry font size
+const LIST_FS := 8           # menu list entry font size (native 8-px cell — 10 rasterised off-grid)
 const DETAIL_FS := 8         # subitem / stat font size
 
 # --- state (owner writes these) ----------------------------------------------
