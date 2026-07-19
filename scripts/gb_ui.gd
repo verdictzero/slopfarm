@@ -1,6 +1,6 @@
 extends CanvasLayer
 class_name GBUI
-## The Game Boy (DMG) LCD interface, per design_handoff_glue_factory_ui: a HUD strip of dark-on-white
+## The Game Boy (DMG) LCD interface, per design_handoff_glue_factory_ui: a HUD strip of dark-on-light
 ## readout chips (MONEY on the left, GLUE on the right) and a two-column main menu (list +
 ## detail/stats + a description bar), in the DMG green ramp.
 ##
@@ -23,7 +23,7 @@ const LIT_LO := Color("6b8f1f")      # lit capsule gradient low
 const DIM_HI := Color("4d7a1f")      # dim capsule gradient top
 const DIM_MID := Color("306230")     # dim capsule gradient mid
 const DIM_LO := Color("1b4a1b")      # dim capsule gradient low
-const WHITE := Color("ffffff")       # readout chip background
+const CHIP_BG := LCD_BG              # readout chip background: the DMG lightest green (#9bbc0f)
 const SHADOW := INK                  # chip drop-shadow colour (darkest green)
 
 # --- geometry, in DESIGN pixels (a 360-tall LCD) -----------------------------
@@ -197,7 +197,7 @@ func _chip_width(text: String) -> float:
 func _draw_chip(text: String, x: float, y: float) -> float:
 	var box := Rect2(x, y, _chip_width(text), DIGIT_FS + 2.0 * CHIP_PAD_Y)
 	_lcd.draw_rect(Rect2(box.position + SHADOW_OFF, box.size), SHADOW)   # drop shadow, behind
-	_lcd.draw_rect(box, WHITE)                                          # white background
+	_lcd.draw_rect(box, CHIP_BG)                                        # light-green background
 	var asc := _font.get_ascent(DIGIT_FS)
 	var desc := _font.get_descent(DIGIT_FS)
 	var ty := y + (box.size.y - (asc + desc)) * 0.5 + asc
