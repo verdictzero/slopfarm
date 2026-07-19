@@ -6,6 +6,7 @@ extends Node3D
 
 var _cam: Camera3D
 var _anchor: Node3D
+var _ui: DmgUI
 var _t := 0.0
 
 
@@ -41,8 +42,23 @@ func _ready() -> void:
 	_cam.current = true
 
 	# 3) The signature green-LCD dither over the whole viewport. Anything on a CanvasLayer above
-	#    layer 100 (a HUD, a menu) would stay crisp on top of the dithered world.
+	#    layer 100 (a HUD, a menu) stays crisp on top of the dithered world.
 	add_child(DmgDither.create(100, 3.0, 0.17))
+
+	# 4) A crisp DMG HUD + menu (layer 112, above the dither). Content is plain data — nothing here
+	#    is game-specific. Call ui.open_menu() / ui.nav() / ui.activate() to drive the menu.
+	_ui = DmgUI.new()
+	add_child(_ui)
+	_ui.set_readouts([
+		{"label": "SCORE", "value": "01200", "side": 0},
+		{"label": "LIVES", "value": "03", "unit": "x", "side": 1},
+	])
+	_ui.set_menu_items([
+		{"title": "STATUS", "lines": ["SCORE   01200", "LIVES   3"],
+			"stats": [["BEST", "09400"], ["TIME", "02:14"]], "desc": "HOW YOU ARE DOING"},
+		{"title": "OPTIONS", "lines": ["SOUND   ON", "SHAKE   OFF"], "desc": "TWEAK THE GAME"},
+		{"title": "QUIT", "lines": ["LEAVE TO DESKTOP"], "desc": "PRESS A TO QUIT"},
+	])
 
 
 func _process(delta: float) -> void:
