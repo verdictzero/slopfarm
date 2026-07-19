@@ -1,15 +1,15 @@
 extends CanvasLayer
 class_name GBUI
-## The Game Boy (DMG) LCD interface, per design_handoff_glue_factory_ui: a capsule-digit HUD strip
-## (MONEY on the left, GLUE on the right) and a two-column main menu (list + detail/stats + a
-## description bar), all in the four-shade DMG green ramp with a scanline overlay on top.
+## The Game Boy (DMG) LCD interface, per design_handoff_glue_factory_ui: a HUD strip of dark-on-white
+## readout chips (MONEY on the left, GLUE on the right) and a two-column main menu (list +
+## detail/stats + a description bar), in the DMG green ramp.
 ##
 ## It lives on its own CanvasLayer ABOVE the dither post-process (layer 100) and the crosshair
 ## (110), so the readouts and the menu draw crisp in front of the palette-snapped world rather than
-## being dithered with it. Everything is painted in one _draw() on a full-LCD Control — the capsule
-## gloss, the panels and the scanlines are all procedural, so the only bundled asset is the pixel
-## font (Press Start 2P). The owner (player.gd) pushes money/glue in and drives the menu through the
-## small API at the bottom; navigation input still arrives through the existing pad/keys.
+## being dithered with it. Everything is painted in one _draw() on a full-LCD Control — the chips
+## and the panels are all procedural, so the only bundled asset is the pixel font (Press Start 2P).
+## The owner (player.gd) pushes money/glue in and drives the menu through the small API at the
+## bottom; navigation input still arrives through the existing pad/keys.
 
 # --- DMG palette (design tokens; greens only) --------------------------------
 const LCD_BG := Color("9bbc0f")      # lightest green, screen background
@@ -23,6 +23,8 @@ const LIT_LO := Color("6b8f1f")      # lit capsule gradient low
 const DIM_HI := Color("4d7a1f")      # dim capsule gradient top
 const DIM_MID := Color("306230")     # dim capsule gradient mid
 const DIM_LO := Color("1b4a1b")      # dim capsule gradient low
+const WHITE := Color("ffffff")       # readout chip background
+const SHADOW := INK                  # chip drop-shadow colour (darkest green)
 
 # --- geometry, in DESIGN pixels (a 360-tall LCD) -----------------------------
 # Everything below is authored against a 360-pixel-tall screen. The world SubViewport now renders
@@ -36,6 +38,9 @@ const CAP_W := 13.0          # digit / sign capsule width
 const SEP_W := 8.0           # separator (comma) capsule width
 const CAP_R := 5.0           # capsule corner radius
 const CAP_GAP := 2.0         # gap between capsules in a row
+const CHIP_PAD_X := 5.0      # text inset inside a white readout chip
+const CHIP_PAD_Y := 3.0
+const SHADOW_OFF := Vector2(-1.0, 1.0)   # drop shadow: one design pixel down-left
 const DIGIT_FS := 8          # capsule glyph font size (Press Start 2P native cell)
 const LABEL_FS := 8          # HUD label / unit-tag font size
 const TITLE_FS := 8          # panel title-bar font size
@@ -155,120 +160,63 @@ func _draw_lcd() -> void:
 		_draw_menu(w, h)
 
 	_draw_hud(w)
-	_draw_scanlines(w, h)
 
 
-## MONEY (capsule row, top-left) and GLUE (capsule row + unit tag, top-right).
+## MONEY (top-left) and GLUE (top-right): each a dark-on-white readout chip with a drop shadow.
 func _draw_hud(w: float) -> void:
-	# MONEY, left.
-	_lcd.draw_string(_font, Vector2(PAD + 3, PAD + LABEL_FS), "MONEY",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FS, INK_MID)
-	var money_y := PAD + LABEL_FS + 5.0
-	_draw_capsule_row(_money_caps(), PAD, money_y)
+	var chip_y := PAD + LABEL_FS + 5.0
 
-	# GLUE, right — label and row both right-aligned to the padding edge.
-	var glue_caps := _glue_caps()
+	# MONEY, left: dark label above a white value chip.
+	_lcd.draw_string(_font, Vector2(PAD + 1, PAD + LABEL_FS), "MONEY",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FS, INK)
+	_draw_chip(_money_str(), PAD, chip_y)
+
+	# GLUE, right: label + white chip + unit tag, right-aligned to the padding edge.
+	var glue_txt := _glue_str()
 	var tag := "SAX"
 	var tag_w := _font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FS).x
-	var row_w := _row_width(glue_caps) + 5.0 + tag_w
+	var block_w := _chip_width(glue_txt) + 5.0 + tag_w
 	var right := w - PAD
-	var glue_x := right - row_w
+	var glue_x := right - block_w
 	var label_w := _font.get_string_size("GLUE", HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FS).x
-	_lcd.draw_string(_font, Vector2(right - label_w - 3, PAD + LABEL_FS), "GLUE",
-			HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FS, INK_MID)
-	var end_x := _draw_capsule_row(glue_caps, glue_x, money_y)
-	# Unit tag, vertically centred on the capsule row.
-	_lcd.draw_string(_font, Vector2(end_x + 5, money_y + (CAP_H + LABEL_FS) * 0.5 - 1), tag,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FS, INK_MID)
+	_lcd.draw_string(_font, Vector2(right - label_w - 1, PAD + LABEL_FS), "GLUE",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FS, INK)
+	var chip_end := _draw_chip(glue_txt, glue_x, chip_y)
+	# Unit tag, dark, vertically centred on the chip.
+	var chip_h := DIGIT_FS + 2.0 * CHIP_PAD_Y
+	_lcd.draw_string(_font, Vector2(chip_end + 5, chip_y + (chip_h + LABEL_FS) * 0.5 - 1), tag,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, LABEL_FS, INK)
 
 
-func _row_width(caps: Array) -> float:
-	var x := 0.0
-	for c in caps:
-		x += float(c["w"]) + CAP_GAP
-	return x - CAP_GAP if not caps.is_empty() else 0.0
+func _chip_width(text: String) -> float:
+	return _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, DIGIT_FS).x + 2.0 * CHIP_PAD_X
 
 
-func _draw_capsule_row(caps: Array, x: float, y: float) -> float:
-	for c in caps:
-		var cw: float = c["w"]
-		_draw_capsule(x, y, cw, c["lit"], String(c["ch"]))
-		x += cw + CAP_GAP
-	return x - CAP_GAP
-
-
-## One glossy LCD-segment capsule: a vertical three-stop gradient with rounded corners, a bright
-## top inset, a dark bottom inset and a 1px ink drop, then the glyph centred in the variant's ink.
-func _draw_capsule(x: float, y: float, w: float, lit: bool, ch: String) -> void:
-	var hi := LIT_HI if lit else DIM_HI
-	var mid := LIT_MID if lit else DIM_MID
-	var lo := LIT_LO if lit else DIM_LO
-	var rows := int(CAP_H)
-	for i in rows:
-		var t := float(i) / float(rows - 1)
-		var col: Color
-		if t < 0.42:
-			col = hi.lerp(mid, t / 0.42)
-		else:
-			col = mid.lerp(lo, (t - 0.42) / 0.58)
-		# Top inset highlight and bottom inset shade (the analog gloss).
-		if i == 0:
-			col = col.lerp(Color(1, 1, 1), 0.55 if lit else 0.28)
-		elif i == 1:
-			col = col.lerp(Color(1, 1, 1), 0.22 if lit else 0.12)
-		if i == rows - 1:
-			col = col.lerp(INK, 0.34 if lit else 0.46)
-		elif i == rows - 2:
-			col = col.lerp(INK, 0.14 if lit else 0.22)
-		# Rounded corners: pull the row in near the top/bottom by the circle inset.
-		var dy := minf(float(i), float(rows - 1 - i))
-		var inset := 0.0
-		if dy < CAP_R:
-			inset = CAP_R - sqrt(maxf(0.0, CAP_R * CAP_R - (CAP_R - dy) * (CAP_R - dy)))
-		_lcd.draw_rect(Rect2(x + inset, y + float(i), w - 2.0 * inset, 1.0), col)
-	# Ink drop under the capsule.
-	_lcd.draw_rect(Rect2(x + CAP_R, y + CAP_H, w - 2.0 * CAP_R, 1.0), INK)
-	# Glyph, centred.
-	var txt := INK if lit else LIT_HI
-	var gw := _font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, DIGIT_FS).x
+## A readout chip: dark text on a white box, the box carrying a single-pixel drop shadow one design
+## pixel down-and-left. Returns the box's right edge so the caller can place a trailing tag.
+func _draw_chip(text: String, x: float, y: float) -> float:
+	var box := Rect2(x, y, _chip_width(text), DIGIT_FS + 2.0 * CHIP_PAD_Y)
+	_lcd.draw_rect(Rect2(box.position + SHADOW_OFF, box.size), SHADOW)   # drop shadow, behind
+	_lcd.draw_rect(box, WHITE)                                          # white background
 	var asc := _font.get_ascent(DIGIT_FS)
 	var desc := _font.get_descent(DIGIT_FS)
-	var gx := x + (w - gw) * 0.5
-	var gy := y + (CAP_H - (asc + desc)) * 0.5 + asc - 1.0   # lift 1px off the shaded bottom
-	_lcd.draw_string(_font, Vector2(round(gx), round(gy)), ch,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, DIGIT_FS, txt)
+	var ty := y + (box.size.y - (asc + desc)) * 0.5 + asc
+	_lcd.draw_string(_font, Vector2(round(x + CHIP_PAD_X), round(ty)), text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, DIGIT_FS, INK)
+	return box.position.x + box.size.x
 
 
-## MONEY capsules: a lit '-' (only when negative), a dim '$', then the magnitude in lit digits with
-## dim thousands separators — matching the HTML reference (sign lit, currency/commas dim).
-func _money_caps() -> Array:
-	var caps: Array = []
-	if money < 0:
-		caps.append({"ch": "-", "lit": true, "w": CAP_W})
-	caps.append({"ch": "$", "lit": false, "w": CAP_W})
-	for ch in _grouped(str(absi(money))):
-		if ch == ",":
-			caps.append({"ch": ",", "lit": false, "w": SEP_W})
-		else:
-			caps.append({"ch": ch, "lit": true, "w": CAP_W})
-	return caps
+## MONEY as dark text: a leading '-' only when negative, the '$', then the grouped magnitude.
+func _money_str() -> String:
+	return ("-$" if money < 0 else "$") + _grouped(str(absi(money)))
 
 
-## GLUE capsules: at least three digits; leading zeros dim, the units digit and everything from the
-## first significant digit onward lit.
-func _glue_caps() -> Array:
+## GLUE as dark text: at least three digits, zero-padded.
+func _glue_str() -> String:
 	var digits := str(glue)
 	while digits.length() < 3:
 		digits = "0" + digits
-	var first := digits.length() - 1
-	for i in digits.length():
-		if digits[i] != "0":
-			first = i
-			break
-	var caps: Array = []
-	for i in digits.length():
-		caps.append({"ch": digits[i], "lit": i >= first, "w": CAP_W})
-	return caps
+	return digits
 
 
 ## Insert thousands separators: "1234567" -> "1,234,567".
@@ -370,18 +318,6 @@ func _draw_dither(r: Rect2) -> void:
 			_lcd.draw_rect(Rect2(x, y, 2.0, 2.0), c)
 			x += 4.0
 		y += 2.0
-
-
-func _draw_scanlines(w: float, h: float) -> void:
-	var c := Color(INK.r, INK.g, INK.b, 0.05)
-	var y := 0.0
-	while y < h:
-		_lcd.draw_rect(Rect2(0, y, w, 1.0), c)
-		y += 4.0
-	var x := 0.0
-	while x < w:
-		_lcd.draw_rect(Rect2(x, 0, 1.0, h), c)
-		x += 4.0
 
 
 # --- per-item detail content -------------------------------------------------

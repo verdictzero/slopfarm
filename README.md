@@ -398,21 +398,17 @@ passes through every token between. It reuses `gen_palette_lut.py`'s `build_lut`
 nearest-colour engine); that older script and its 512-colour retro palette are kept only as
 that shared engine.
 
-`shaders/dither_lut.gdshader` does three things, in order:
+`shaders/dither_lut.gdshader` does two things, in order:
 
 - **Pseudo pixels.** The world SubViewport renders at 1080×1080 and the buffer is diced into a
-  hard grid of `grid_size × grid_size` cells (default 3, a 360×360 dot grid). Each cell samples
-  the world once, at its centre, so a whole cell carries one colour — the LCD dot, independent
-  of how far the buffer is scaled into the console glass afterward.
+  grid of `grid_size × grid_size` cells (default 3, a 360×360 dot grid). Each cell samples the
+  world once, at its centre, so a whole cell carries one colour — the LCD dot, independent of how
+  far the buffer is scaled into the console glass afterward. `grid_size` is a shader uniform on the
+  `Dither` material in `world.tscn`; 1 collapses to a full-resolution per-pixel dither.
 - **Ordered dither + palette snap.** Each cell is nudged by a 4×4 Bayer threshold keyed to the
   cell (not the native pixel, so the pattern lives at dot resolution) and snapped through the
   LUT. The offset is what breaks quantisation into a pattern instead of flat banding; being
   screen-position dependent, it cannot itself be baked into the colour-indexed table.
-- **Hard grid.** The leading edge of every dot drops down the green ramp and re-snaps, drawing
-  the darker lattice between dots — visible over lit areas, vanishing over already-dark ones,
-  the way the unlit gaps read on a real reflective LCD. Because it re-snaps, gap pixels are
-  still palette greens. `grid_size`, `grid_gap` and `grid_strength` are shader uniforms, set
-  on the `Dither` material in `world.tscn`.
 
 ### Load-bearing settings
 
