@@ -12,33 +12,32 @@ const DEAD := 0.16          # D-pad dead zone
 const STICK_MAX := 0.34     # fraction of the socket the thumb can travel
 
 # Control layout, in shell (448x900) units: centres and sizes tuned to sit clear of the square
-# screen and of each other, with room for the captions beneath.
-const BTN_W := 62.0
-const BTN_H := 64.6         # button art is 96x100
-const DPAD_W := 150.0
-const STICK_W := 116.0      # pivot socket art is 140x140 (square)
-const BALL_W := 63.0        # ball art is 76x84; rides ~centred in the socket
-const BALL_H := 69.6
-const BALL_DY := 3.3        # the ball's rest centre sits a touch below the socket centre
-const PILL_W := 84.0
-const PILL_H := 38.4        # pill art is 140x64
-const CAP_W := 88.0
-const CAP_H := 13.8         # caption art is 140x22
+# screen and of each other. Sized up (no captions any more, so the extra room goes into the
+# controls) — the touch targets are bigger and easier to hit on a phone.
+const BTN_W := 80.0
+const BTN_H := 83.0         # button art is 96x100
+const DPAD_W := 184.0
+const STICK_W := 144.0      # pivot socket art is 140x140 (square)
+const BALL_W := 78.0        # ball art is 76x84; rides ~centred in the socket
+const BALL_H := 86.0
+const BALL_DY := 4.0        # the ball's rest centre sits a touch below the socket centre
+const PILL_W := 108.0
+const PILL_H := 49.4        # pill art is 140x64
 
-# id, centre x, centre y, caption word
+# id, centre x, centre y
 const BUTTONS := [
-	["btn_X", 262.0, 528.0, "jump"],
-	["btn_C", 330.0, 528.0, "drive"],
-	["btn_A", 398.0, 528.0, "hit"],
-	["btn_Y", 262.0, 614.0, "run"],
-	["btn_Z", 330.0, 614.0, "reset"],
-	["btn_B", 398.0, 614.0, "use"],
+	["btn_X", 244.0, 520.0],
+	["btn_C", 326.0, 520.0],
+	["btn_A", 408.0, 520.0],
+	["btn_Y", 244.0, 610.0],
+	["btn_Z", 326.0, 610.0],
+	["btn_B", 408.0, 610.0],
 ]
-const DPAD_C := Vector2(104.0, 571.0)
+const DPAD_C := Vector2(100.0, 566.0)
 const STICK_L := Vector2(104.0, 752.0)
 const STICK_R := Vector2(330.0, 752.0)
-const PILL_SEL := Vector2(178.0, 840.0)
-const PILL_START := Vector2(272.0, 840.0)
+const PILL_SEL := Vector2(162.0, 856.0)
+const PILL_START := Vector2(286.0, 856.0)
 
 var _pad: ShellInput
 var _shell_w := 448.0
@@ -147,12 +146,6 @@ func _at(tex: Texture2D, cx: float, cy: float, w: float, h: float) -> TextureRec
 	return _rect(tex, cx - w * 0.5, cy - h * 0.5, w, h)
 
 
-func _caption(word: String, cx: float, cy: float) -> void:
-	var path := ASSET_DIR + "cap_" + word + ".png"
-	if ResourceLoader.exists(path):
-		_at(load(path), cx, cy, CAP_W, CAP_H)
-
-
 ## POCKET GB-1 aligned to the display's left edge, POWER to its right edge, in the band above it.
 func _build_brand(g: Dictionary) -> void:
 	var gl := float(g["x"])
@@ -176,7 +169,6 @@ func _build_dpad() -> void:
 	for k in ["idle", "up", "down", "left", "right"]:
 		_dpad_tex[k] = load(ASSET_DIR + "dpad_" + k + ".png")
 	_dpad_node = _at(_dpad_tex["idle"], DPAD_C.x, DPAD_C.y, DPAD_W, DPAD_W)
-	_caption("move", DPAD_C.x, DPAD_C.y + DPAD_W * 0.5 + 9.0)
 
 
 func _build_buttons() -> void:
@@ -186,7 +178,6 @@ func _build_buttons() -> void:
 		var pressed: Texture2D = load(ASSET_DIR + id + "_pressed.png")
 		var node := _at(idle, e[1], e[2], BTN_W, BTN_H)
 		_btns[id] = {"node": node, "idle": idle, "pressed": pressed}
-		_caption(String(e[3]), e[1], float(e[2]) + BTN_H * 0.5 + 8.0)
 
 
 func _build_sticks() -> void:
@@ -203,10 +194,9 @@ func _build_sticks() -> void:
 func _build_pills() -> void:
 	var idle: Texture2D = load(ASSET_DIR + "pill_idle.png")
 	var pressed: Texture2D = load(ASSET_DIR + "pill_pressed.png")
-	for e in [["pill_select", PILL_SEL, "select"], ["pill_start", PILL_START, "start"]]:
+	for e in [["pill_select", PILL_SEL], ["pill_start", PILL_START]]:
 		var node := _at(idle, e[1].x, e[1].y, PILL_W, PILL_H)
 		_pills[e[0]] = {"node": node, "idle": idle, "pressed": pressed}
-		_caption(String(e[2]), e[1].x, e[1].y + PILL_H * 0.5 + 8.0)
 
 
 # ---- touch -----------------------------------------------------------------

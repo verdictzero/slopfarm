@@ -541,16 +541,38 @@ func _build_signage() -> void:
 
 
 func _build_lights() -> void:
-	# A grid of unshadowed omnis so the big hall reads under its roof. Shadowless on purpose —
+	# A ceiling full of downlights: at each fixture a small glowing bulb and a SpotLight3D aimed
+	# straight down, so the hall reads as lit from many overhead lamps. All shadowless on purpose —
 	# shadow maps are the single most expensive thing in this game's frame (see the README).
-	for x in [-42.0, -21.0, 0.0, 21.0, 42.0]:
-		for z in [-14.0, 14.0]:
-			var light := OmniLight3D.new()
-			light.position = Vector3(x, WALL_H - 1.0, z)
-			light.omni_range = 26.0
-			light.light_energy = 1.9
-			light.shadow_enabled = false
-			add_child(light)
+	var bulb_mat := StandardMaterial3D.new()
+	bulb_mat.albedo_color = Color(1.0, 0.97, 0.86)
+	bulb_mat.emission_enabled = true
+	bulb_mat.emission = Color(1.0, 0.95, 0.82)
+	bulb_mat.emission_energy_multiplier = 6.0
+	var bulb_mesh := SphereMesh.new()
+	bulb_mesh.radius = 0.4
+	bulb_mesh.height = 0.8
+	bulb_mesh.radial_segments = 8
+	bulb_mesh.rings = 5
+
+	var y := WALL_H - 0.6
+	for x in [-48.0, -32.0, -16.0, 0.0, 16.0, 32.0, 48.0]:
+		for z in [-16.0, 0.0, 16.0]:
+			var bulb := MeshInstance3D.new()
+			bulb.mesh = bulb_mesh
+			bulb.material_override = bulb_mat
+			bulb.position = Vector3(x, y, z)
+			add_child(bulb)
+
+			var spot := SpotLight3D.new()
+			spot.position = Vector3(x, y - 0.25, z)
+			spot.rotation_degrees = Vector3(-90.0, 0.0, 0.0)   # aim the cone straight down
+			spot.spot_range = 22.0
+			spot.spot_angle = 46.0
+			spot.spot_angle_attenuation = 0.6
+			spot.light_energy = 3.4
+			spot.shadow_enabled = false
+			add_child(spot)
 
 
 # ---- belt nodes -------------------------------------------------------------
