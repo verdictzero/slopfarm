@@ -24,14 +24,16 @@ const BALL_DY := 4.0        # the ball's rest centre sits a touch below the sock
 const PILL_W := 108.0
 const PILL_H := 49.4        # pill art is 140x64
 
-# id, centre x, centre y
+# id, centre x, centre y. Saturn-pad arc: two rows sloping up to the right, columns
+# offset so the cluster runs downhill to the left. Tighter spacing (74 across, 78 down)
+# than a flat grid, and each column left of the rightmost steps down 20 units.
 const BUTTONS := [
-	["btn_X", 244.0, 520.0],
-	["btn_C", 326.0, 520.0],
+	["btn_X", 260.0, 560.0],
+	["btn_C", 334.0, 540.0],
 	["btn_A", 408.0, 520.0],
-	["btn_Y", 244.0, 610.0],
-	["btn_Z", 326.0, 610.0],
-	["btn_B", 408.0, 610.0],
+	["btn_Y", 260.0, 638.0],
+	["btn_Z", 334.0, 618.0],
+	["btn_B", 408.0, 598.0],
 ]
 const DPAD_C := Vector2(100.0, 566.0)
 const STICK_L := Vector2(104.0, 752.0)
