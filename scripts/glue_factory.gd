@@ -123,6 +123,12 @@ var _byproducts: Array = []         # tallow drums sliding to the bin
 var _sacks: Array = []              # parked finished sacks, cycled through SACK_CAP slots
 var _sack_count := 0
 var _spinners: Array = []           # {node, speed} — rotating machine parts
+## The three gore emitters (spray, chunks, drip). Started OFF; only switched on while the grinder
+## is actually chewing a body, so blood erupts during processing rather than pouring forever.
+var _gore: Array = []
+## Horses mid-drop into the grinder hopper: each {horse, t, p0, p1, p2, base_scale}. They are
+## floated bodily down the funnel in view, then freed and turned into a batch that grinds.
+var _descending: Array = []
 var _feed_world: Vector3
 var _dock_world: Vector3
 var _floor_y := 0.0
@@ -216,15 +222,111 @@ func try_feed(world_pos: Vector3) -> bool:
 	return true
 
 
+## Feed a CARRIED horse bodily into the grinder: the factory takes the ragdoll over and floats it
+## down into the intake hopper in full view, and only when it has sunk into the throat does it turn
+## into a batch and the grinder erupt. True if accepted — the caller then drops its reference to
+## the ragdoll WITHOUT freeing it, because the factory now owns and will free it. This is the
+## "drop a horse and watch its body go in and get processed" path; try_feed above is the old
+## instant version kept for anything that just wants a unit onto the line.
+func feed_horse(horse: Node3D) -> bool:
+	if _machines.is_empty():
+		return false
+	if horse == null or not is_instance_valid(horse):
+		return false
+	if horse.global_position.distance_to(_feed_world) > FEED_RADIUS:
+		return false
+	if _batches.size() + _descending.size() >= MAX_ACTIVE:
+		return false
+	# Take the body out of physics and collision so it slides straight down the funnel on rails
+	# instead of bouncing off the machine or shoving the player, and stop it sleeping.
+	var rb := horse as RigidBody3D
+	if rb != null:
+		rb.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		rb.freeze = true
+		rb.collision_layer = 0
+		rb.collision_mask = 0
+		rb.sleeping = false
+	var center: Vector3 = _machines[0]["center"]
+	_descending.append({
+		"horse": horse,
+		"t": 0.0,
+		"p0": horse.global_position,
+		"p1": to_global(center + Vector3(0.0, 6.4, 0.0)),   # hoisted up over the hopper mouth
+		"p2": to_global(center + Vector3(0.0, 0.9, 0.0)),   # plunged deep into the grinder throat
+		"base_scale": horse.scale,
+	})
+	return true
+
+
+## How long a horse takes to sink down the hopper before it is ground.
+const DESCEND_TIME := 1.1
+
+
+## Advances every horse dropping into the grinder: a smooth arc from where it was let go, up over
+## the hopper mouth, then down into the throat, shrinking as the funnel swallows it. When one is
+## all the way in it is freed and handed to the line as a fresh batch that grinds on the spot.
+func _update_descending(dt: float) -> void:
+	if _descending.is_empty():
+		return
+	var kept := []
+	for d in _descending:
+		var horse := d["horse"] as Node3D
+		if horse == null or not is_instance_valid(horse):
+			continue
+		d["t"] = float(d["t"]) + dt / DESCEND_TIME
+		var t := clampf(float(d["t"]), 0.0, 1.0)
+		# Quadratic bezier p0 -> p1 -> p2 so it lofts up to the mouth then drops in.
+		var u := 1.0 - t
+		var p: Vector3 = (d["p0"] as Vector3) * (u * u) \
+				+ (d["p1"] as Vector3) * (2.0 * u * t) \
+				+ (d["p2"] as Vector3) * (t * t)
+		horse.global_position = p
+		# Shrink over the back half, as if the funnel is drawing it down and in.
+		var shrink := clampf((t - 0.35) / 0.65, 0.0, 1.0)
+		horse.scale = (d["base_scale"] as Vector3) * lerpf(1.0, 0.2, shrink)
+		if t >= 1.0:
+			horse.queue_free()
+			_spawn_batch_at_grinder()
+		else:
+			kept.append(d)
+	_descending = kept
+
+
+## Puts a fresh batch straight at the grinder, hidden inside it and ready to process, so a
+## horse that has just gone down the hopper is ground where it landed rather than teleporting to
+## the door and walking in.
+func _spawn_batch_at_grinder() -> void:
+	var gnode := int(_machines[0]["node"])
+	var node := MeshInstance3D.new()
+	node.material_override = _mat
+	node.mesh = _stream_meshes[0]
+	add_child(node)
+	node.position = _nodes[gnode]["pos"]
+	node.visible = false
+	_batches.append({
+		"node": node, "stage": 0, "at": gnode, "state": "arrive",
+		"from": Vector3.ZERO, "to": Vector3.ZERO, "progress": 0.0, "timer": 0.0, "slot": 0,
+	})
+
+
 func _process(delta: float) -> void:
 	for s in _spinners:
 		(s["node"] as Node3D).rotate_y(s["speed"] * delta)
+
+	# Float any horses being dropped down into the grinder hopper.
+	_update_descending(delta)
 
 	var survivors := []
 	for b in _batches:
 		if not _update_batch(b, delta):
 			survivors.append(b)
 	_batches = survivors
+
+	# Blood and gore only while the grinder is actually chewing a body — machine 0 is busy for
+	# exactly the seconds it processes one, so the emitters run in bursts, not forever.
+	var grinding: bool = not _machines.is_empty() and bool(_machines[0]["busy"])
+	for e in _gore:
+		(e as CPUParticles3D).emitting = grinding
 
 	var kept := []
 	for p in _byproducts:
@@ -1005,7 +1107,9 @@ func _belt(from: Vector3, to: Vector3) -> void:
 
 ## Tons of blood and gore at the grinder mouth: a fine crimson spray plus coarser dark chunks,
 ## both erupting from the intake and raining onto the belt below. CPUParticles so it renders
-## reliably under the Compatibility renderer.
+## reliably under the Compatibility renderer. Built emitting=false and collected into _gore; the
+## grinder switches them on only while it is actually chewing a body (see _process), so the blood
+## comes in bursts as horses are ground rather than gushing endlessly.
 func _build_gore() -> void:
 	var mouth: Vector3 = (_machines[0]["center"] as Vector3) + Vector3(0, 4.6, 0)
 
@@ -1026,8 +1130,10 @@ func _build_gore() -> void:
 	spray.scale_amount_min = 0.6
 	spray.scale_amount_max = 1.7
 	spray.color = Color.WHITE
+	spray.emitting = false
 	_apply_gore_ramp(spray)
 	add_child(spray)
+	_gore.append(spray)
 
 	# Coarser gore chunks — fewer, bigger, tumbling, still bloody.
 	var chunks := CPUParticles3D.new()
@@ -1048,8 +1154,10 @@ func _build_gore() -> void:
 	chunks.scale_amount_min = 0.7
 	chunks.scale_amount_max = 2.2
 	chunks.color = Color.WHITE
+	chunks.emitting = false
 	_apply_gore_ramp(chunks)
 	add_child(chunks)
+	_gore.append(chunks)
 
 	# A slow, constant drip of blood down the grinder throat onto the belt.
 	var drip := CPUParticles3D.new()
@@ -1064,7 +1172,9 @@ func _build_gore() -> void:
 	drip.initial_velocity_min = 0.5
 	drip.initial_velocity_max = 1.5
 	drip.color = Color.WHITE
+	drip.emitting = false
 	add_child(drip)
+	_gore.append(drip)
 
 
 func _gore_particle_mesh(size: float, color: Color) -> ArrayMesh:

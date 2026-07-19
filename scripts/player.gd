@@ -596,7 +596,7 @@ func _interact() -> void:
 		return
 	if _carried != null and is_instance_valid(_carried):
 		if _feed_carried():
-			_carried.queue_free()
+			# The factory has taken the ragdoll over; let go without freeing it.
 			_carried = null
 			return
 		var forward := -camera.global_transform.basis.z
@@ -668,7 +668,7 @@ func _throw() -> void:
 	if _carried == null or not is_instance_valid(_carried):
 		return
 	if _feed_carried():
-		_carried.queue_free()
+		# The factory has taken the ragdoll over; let go without freeing it.
 		_carried = null
 		return
 	var forward := -camera.global_transform.basis.z
@@ -676,11 +676,15 @@ func _throw() -> void:
 	_carried = null
 
 
+## Hand the carried horse to the factory's grinder, which takes it over and drops it bodily down
+## the hopper in view. True if it was accepted; the caller then clears its reference WITHOUT
+## freeing the ragdoll, since the factory now owns it and frees it once it has gone all the way in.
 func _feed_carried() -> bool:
-	var at := _carried.global_position
+	if _carried == null or not is_instance_valid(_carried):
+		return false
 	for node in get_tree().get_nodes_in_group("glue_factory"):
 		var factory := node as GlueFactory
-		if factory != null and factory.try_feed(at):
+		if factory != null and factory.feed_horse(_carried):
 			return true
 	return false
 

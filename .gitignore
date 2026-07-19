@@ -23,6 +23,9 @@ __pycache__/
 
 # Exported build artifacts (APKs etc.)
 build/
+# Android v4 incremental-install signature — only used by `adb install --incremental`,
+# not needed to sideload the committed debug APK, so keep it out of the repo.
+*.idsig
 
 # Local deploy credentials (never commit secrets)
 .deploy/

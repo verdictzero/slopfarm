@@ -65,6 +65,9 @@ var _steer := 0.0
 ## Wheel nodes: front two live under steer pivots so they turn; all four roll.
 var _wheels: Array = []
 var _steer_pivots: Array = []
+## The truck's solid collision box. Kept top-level and pushed to the truck's transform every
+## physics frame, because a physics body does NOT follow a parent Node3D that is moved directly.
+var _col_body: AnimatableBody3D
 
 
 ## Builds the truck and parks it at world `at`, facing `heading` (radians). Call once from main.
@@ -89,6 +92,9 @@ func setup(terrain: TerrainManager, at: Vector3, heading: float) -> void:
 
 	global_position = Vector3(at.x, terrain.height_at(at.x, at.z) + RIDE_HEIGHT, at.z)
 	_orient(global_position)
+	# Built LAST, once the truck is at its real spot, so the collision body registers with the
+	# physics server at the truck's position rather than back at the world origin.
+	_build_collision()
 	add_to_group("truck")
 
 
@@ -122,6 +128,10 @@ func _physics_process(delta: float) -> void:
 	if _driver != null:
 		_drive(delta)
 	_roll_wheels(delta)
+	# Drag the (top-level) collision box onto the truck every frame. A physics body doesn't follow
+	# a parent moved by hand, so parking it here is what keeps the box on the truck as it drives.
+	if _col_body != null:
+		_col_body.global_transform = global_transform
 
 
 func _drive(delta: float) -> void:
@@ -192,7 +202,9 @@ func _place_camera(delta: float, snap: bool) -> void:
 	if _camera == null:
 		return
 	var b := global_transform.basis
-	var want := global_position + b.y * 6.6 - b.z * 13.5
+	# The truck's forward is -b.z, so the chase camera sits BEHIND it at +b.z (it used to sit in
+	# front, so the view faced backwards and driving forward drove the truck at the camera).
+	var want := global_position + b.y * 6.6 + b.z * 13.5
 	if snap or delta <= 0.0:
 		_camera.global_position = want
 	else:
@@ -358,6 +370,35 @@ func _build_wheels() -> void:
 		_wheels.append(wheel)
 		if front:
 			_steer_pivots.append(mount)
+
+
+## A single kinematic collision box roughly the size of the truck, so the player and loose horse
+## ragdolls bump off it instead of walking through — the thing the user asked for. It is an
+## AnimatableBody3D (kinematic): when the truck is PARKED it is a solid wall you cannot pass, and
+## when it is being DRIVEN it shoves bodies aside rather than snagging on them, so the "never gets
+## stuck" rule still holds. It sits on collision layer 1 (the world layer) so the player (mask 1)
+## and the ragdolls (mask 1) both collide with it, and it is dragged onto the truck each physics
+## frame (see _physics_process) because a physics body does not follow a hand-moved parent.
+func _build_collision() -> void:
+	var body := AnimatableBody3D.new()
+	# Top-level so it lives in world space and is positioned explicitly (see _physics_process):
+	# moving the truck Node3D by hand does not carry a physics-body child with it, so we drive the
+	# box onto the truck each frame instead. Plain kinematic (no sync_to_physics) — it is a wall to
+	# bump, not a platform to ride. On collision layer 1 so the player (mask 1) and ragdolls (mask 1)
+	# both hit it. The box is kept just inside the visible silhouette (narrower than the proud tyres)
+	# and reaches from near the ground to the roof so a capsule can't slip under the lift.
+	body.top_level = true
+	body.collision_layer = 1
+	body.collision_mask = 0
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(2.5, 3.4, 7.2)
+	col.shape = shape
+	col.position = Vector3(0, 1.85, -0.3)
+	body.add_child(col)
+	add_child(body)
+	body.global_transform = global_transform
+	_col_body = body
 
 
 ## A big off-road wheel on its axle (local X): a fat black tyre torus (outer edge = WHEEL_RADIUS)
