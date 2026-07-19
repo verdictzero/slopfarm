@@ -12,9 +12,9 @@ class_name DmgConsole
 ## the world full-rect, so the screen is never black.
 ##
 ## INPUT (all generic — nothing game-specific):
-##   move_vector      : Vector2  left stick, -1..1 per axis (y+ = up/forward)
-##   look() -> Vector2: right-stick delta since last call (accumulator), for camera look
-##   dpad_vector      : Vector2  the D-pad as -1/0/1 per axis
+##   move_vector      : Vector2  D-pad + left stick folded together, -1..1 per axis (y+ = up/forward)
+##   look() -> Vector2: right-stick look accumulated since the last call (px/s x dt), for camera look
+##   dpad_vector      : Vector2  the raw D-pad alone as -1/0/1 per axis (also folded into move_vector)
 ##   button_pressed(id) / button_released(id) signals, is_held(id)  — ids: a b c x y z start select
 
 ## True on a real handheld export (or with DMGKIT_TOUCH set); web is handled by an HTML shell.
@@ -33,6 +33,9 @@ var dpad_vector := Vector2.ZERO
 
 const DEAD := 0.16          # D-pad dead zone
 const STICK_MAX := 0.34     # fraction of the socket the thumb can travel
+## Right-stick look speed at full deflection, in shell px/s — integrated every frame so a held
+## stick keeps turning the camera at a steady, frame-rate-independent rate (drained by look()).
+const LOOK_UNITS_PER_SEC := 430.0
 
 # Control layout in shell (448x900) units — matches slopfarm's pad.
 const BTN_W := 80.0
@@ -68,6 +71,8 @@ var _pills := {}            # "start"/"select" -> {node, idle, pressed}
 var _sticks := {}           # "left"/"right" -> {pivot, ball, idle, pressed}
 var _held := {}
 var _look_accum := Vector2.ZERO
+var _lstick := Vector2.ZERO   # left-stick deflection, polled into move_vector each frame
+var _rstick := Vector2.ZERO   # right-stick deflection, integrated into look each frame
 
 var _dp_touch := -1
 var _l_touch := -1
@@ -91,6 +96,17 @@ func look() -> Vector2:
 
 func is_held(id: String) -> bool:
 	return _held.get(id, false)
+
+
+func _process(delta: float) -> void:
+	# D-pad and left stick fold into move_vector (forward = +y), clamped so a half-pushed stick still
+	# walks at half pace. The right stick integrates into look at a steady rate, so holding it
+	# deflected keeps turning the camera even after the finger stops sliding.
+	var mv := Vector2(_lstick.x + dpad_vector.x, -_lstick.y + dpad_vector.y)
+	if mv.length() > 1.0:
+		mv = mv.normalized()
+	move_vector = mv
+	_look_accum += _rstick * LOOK_UNITS_PER_SEC * delta
 
 
 func _asset(name: String) -> String:
@@ -126,6 +142,7 @@ func _build() -> void:
 		fb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		fb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(fb)
+		_lcd = fb          # so a later set_lcd() still updates the screen on the no-skin path
 		return
 	_shell_w = float(layout["shell"]["w"])
 	_shell_h = float(layout["shell"]["h"])
@@ -351,9 +368,9 @@ func _update_stick(side: String, pos: Vector2) -> void:
 	ball.texture = s["pressed"]
 	var v := d / max_r
 	if side == "left":
-		move_vector = Vector2(v.x, -v.y)     # y+ = up/forward
+		_lstick = v          # folded into move_vector in _process
 	else:
-		_look_accum += v
+		_rstick = v          # integrated into look in _process
 
 
 func _reset_stick(side: String) -> void:
@@ -362,4 +379,6 @@ func _reset_stick(side: String) -> void:
 	ball.offset_left = 0.0; ball.offset_top = 0.0; ball.offset_right = 0.0; ball.offset_bottom = 0.0
 	ball.texture = s["idle"]
 	if side == "left":
-		move_vector = Vector2.ZERO
+		_lstick = Vector2.ZERO
+	else:
+		_rstick = Vector2.ZERO

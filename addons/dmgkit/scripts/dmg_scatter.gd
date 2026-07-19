@@ -43,6 +43,14 @@ class_name DmgScatter
 ## Overall thinning applied everywhere (1 = as dense as the grid/clumping allow).
 @export_range(0.0, 1.0) var density: float = 1.0
 
+@export_group("Material")
+## Material applied to every instance (as material_override). Leave null to use the default below.
+@export var material: Material
+## Only when `material` is null: if true, build a flat vertex-colour material (for DmgMeshKit
+## meshes, the common case); if false, apply NO override so each mesh keeps its OWN material —
+## which is what textured meshes (grass/leaf billboards, props with their own texture) need.
+@export var vertex_color_material: bool = true
+
 ## One entry per variant. Assign before setup().
 var meshes: Array = []
 ## Optional custom filter: func(x: float, z: float) -> bool. Return false to forbid placement there
@@ -51,7 +59,7 @@ var allow_at: Callable = Callable()
 
 var _terrain: Node        # DmgTerrain (duck-typed: needs height_at(x, z))
 var _anchor: Node3D
-var _mat: StandardMaterial3D
+var _mat: Material         # null = leave each mesh's own material alone
 var _clump_noise: FastNoiseLite
 var _slope_min_cos := 0.5
 var _exclusions: Array[Rect2] = []
@@ -69,12 +77,20 @@ func setup(terrain: Node, anchor: Node3D) -> void:
 	_anchor = anchor
 	_slope_min_cos = cos(deg_to_rad(clampf(slope_max_degrees, 0.0, 89.0)))
 
-	_mat = StandardMaterial3D.new()
-	_mat.vertex_color_use_as_albedo = true
-	_mat.roughness = 1.0
-	_mat.metallic = 0.0
-	_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
-	_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Choose the instance material: an explicit one, the flat vertex-colour default, or none (so
+	# textured meshes keep their own material). See the exports above.
+	if material != null:
+		_mat = material
+	elif vertex_color_material:
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.roughness = 1.0
+		m.metallic = 0.0
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST_WITH_MIPMAPS
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_mat = m
+	else:
+		_mat = null
 
 	if clump:
 		_clump_noise = FastNoiseLite.new()
@@ -175,7 +191,8 @@ func _build_tile(tile: Vector2i) -> void:
 			mm.set_instance_transform(i, transforms[i])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.material_override = _mat
+		if _mat != null:
+			mmi.material_override = _mat   # null leaves each mesh's own material intact
 		mmi.visibility_range_end = cull
 		mmi.visibility_range_end_margin = fade
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

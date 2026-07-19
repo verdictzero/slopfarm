@@ -1,20 +1,20 @@
 extends Node3D
 class_name DmgTerrain
-## Streams flat-shaded, low-poly terrain chunks around the assigned player.
+## Streams flat-shaded, low-poly terrain chunks around the assigned `player` node.
 ##
-## The world is a flat farm basin at the origin, ringed by rolling hills. Terrain
-## height is a pure function of world position, so chunks are deterministic and can be
-## built, freed and rebuilt without any bookkeeping. That purity is also why the hills
-## are placed relative to the *origin* rather than to the player: keyed to the player
-## they would recede as you walked toward them, and every chunk would rebuild
-## differently each step.
+## By default the world is a flat basin at the origin ringed by rolling hills (tune the
+## `Terrain shape` exports for a different world). Terrain height is a pure function of world
+## position, so chunks are deterministic and can be built, freed and rebuilt without any
+## bookkeeping. That purity is also why the hills are placed relative to the *origin* rather than
+## to the player: keyed to the player they would recede as you walked toward them, and every chunk
+## would rebuild differently each step.
 ##
-## Beyond the basin a low-frequency region mask -- not the ring alone -- decides where
-## hills are allowed, so flat ground still dominates as you travel out instead of the
-## world turning into endless hills.
+## Beyond the basin a low-frequency region mask -- not the ring alone -- decides where hills are
+## allowed, so flat ground still dominates as you travel out instead of the world turning into
+## endless hills.
 ##
-## Distant chunks drop resolution and only the innermost chunks carry collision, which
-## is what makes the draw distance affordable on the Pi.
+## Distant chunks drop resolution and only the innermost chunks carry collision, which keeps the
+## draw distance cheap on low-end/mobile hardware.
 
 @export_group("Chunks")
 ## World units per chunk side.
@@ -64,9 +64,9 @@ class_name DmgTerrain
 
 @export_group("Ground cover")
 ## Slope at which dirt starts showing through the grass, and where it takes over
-## entirely. These are checked against the measured slope distribution of this terrain
-## (tools/probe_slope.gd): steeper than 10 deg is ~17% of visible ground, 18 deg ~7%.
-## A threshold outside that range is dead code — the previous rule wanted 53 deg, which
+## entirely. On the default terrain, steeper than 10 deg is ~17% of visible ground, 18 deg ~7%,
+## so these two cutoffs put dirt on the banks without carpeting the flats. A threshold outside
+## the terrain's actual slope range is dead code — the previous rule wanted 53 deg, which
 ## this terrain never reaches.
 @export var dirt_slope_begin_degrees: float = 10.0
 @export var dirt_slope_full_degrees: float = 18.0

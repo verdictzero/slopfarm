@@ -20,17 +20,10 @@ class_name DmgTerrainTextures
 ## this (it has no seamless mode; NoiseTexture2D's `seamless` flag is a separate,
 ## slower cross-blend), and a seam repeated across a flat plain would be glaring.
 ##
-## All layers live in ONE Texture2DArray so the shader can pick a layer with a value
-## read from the farm plan's zone map. That keeps the cost flat no matter how many ground
-## types the designer offers -- a sampler per type would mean a sample per type, since a
-## sampler cannot be indexed dynamically. (Verified working in gl_compatibility on V3D
-## before this was built on.)
-##
-## "Flat" is four samples, not three, and mud is why. Every other layer is CHOSEN by the
-## zone map, so they cost one indexed fetch between them; mud is BLENDED over whatever was
-## chosen (the trample map decides how much), and a blend needs both ends present at once.
-## It is the only ground type that should ever earn its own fetch -- anything else the
-## designer adds must go through the indexed path.
+## All six layers live in ONE Texture2DArray so a shader can pick a layer by an index read from a
+## texture, keeping the cost flat however many ground types you offer (a sampler cannot be indexed
+## dynamically). The default dmg_terrain.gdshader only samples grass/dirt/rock by slope; the other
+## three (road/crop/mud) are here as an extension hook for your own zone/paint shader.
 
 ## Texture side in pixels. Low-res on purpose: this is the "nearest neighbour" look.
 const SIZE := 32
@@ -43,15 +36,8 @@ const TILE_WORLD_UNITS := 4.0
 ## across one slope and reads as woven fabric rather than stone.
 const ROCK_TILE_WORLD_UNITS := 11.0
 
-# Layer indices into the array. 0-4 are the ground types the farm designer can assign to
-# a zone, and their order MUST match GROUND_TYPES in tools/farm_plan.py — the plan stores
-# these as raw integers in the zone map. Rock is not authorable: it is only ever reached
-# through the slope rules, so it lives past the end.
-#
-# Mud is authorable AND reached automatically: the trample map blends toward it around
-# gates and troughs (see FarmPlan.trample_texture). It sits at the end of the authorable
-# range so adding it did not renumber pasture..crop — those integers are already written
-# into farm/plan.json, so renumbering them would silently repaint every authored zone.
+# Layer indices into the array. The default shader uses PASTURE (grass, index 0), DIRT (1) and
+# ROCK (5); ROAD/CROP/MUD (2/3/4) are extra ground types you can index from your own zone shader.
 const LAYER_PASTURE := 0
 const LAYER_DIRT := 1
 const LAYER_ROAD := 2

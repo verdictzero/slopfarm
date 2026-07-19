@@ -6,9 +6,10 @@ class_name DmgShell
 ##   - desktop / web -> the buffer shown in a NEAREST-scaled TextureRect (integer-upscaled when it
 ##     fits, else fit-to-window), with window input forwarded into the SubViewport.
 ##
-## Put your world under `world_viewport` (or set `world_scene`), including a DmgDither inside it so
-## the buffer is dithered before it is presented. On console builds, read input from `console`.
-## Generalised from slopfarm's shell.
+## Put your world under `world_viewport` (or set `world_scene`) — it has its OWN World3D, so it must
+## contain its own Camera3D, a WorldEnvironment, and lighting, plus a DmgDither so the buffer is
+## dithered before it is presented. On console builds, read input from `console` (move_vector /
+## look() / dpad_vector / button signals). Generalised from slopfarm's shell.
 
 ## The LCD buffer size. Square by default, like a DMG-ish screen; the dither keys its dot grid to it.
 @export var buffer_size := Vector2i(1080, 1080)
@@ -17,7 +18,7 @@ class_name DmgShell
 
 ## The viewport your game renders into. Add your world here (camera, terrain, DmgDither, …).
 var world_viewport: SubViewport
-## The faceplate on console builds, else null. Read move_vector / take_look() / button signals from it.
+## The faceplate on console builds, else null. Read move_vector / look() / button signals from it.
 var console: DmgConsole
 
 var _bare: TextureRect
@@ -26,6 +27,10 @@ var _forward := false
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Pass mouse events through: a full-rect Control defaults to MOUSE_FILTER_STOP, which would
+	# swallow mouse motion/clicks before _unhandled_input could forward them into the SubViewport
+	# (killing mouse-look on desktop/web). The console's own controls set their own filters.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 	world_viewport = SubViewport.new()
 	world_viewport.size = buffer_size

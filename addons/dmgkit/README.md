@@ -39,10 +39,12 @@ func _ready() -> void:
     var scatter := DmgScatter.new()
     scatter.clump = true
     scatter.slope_max_degrees = 24.0
-    scatter.meshes = [my_tree_mesh_a, my_tree_mesh_b]
+    scatter.meshes = [my_tree_mesh_a, my_tree_mesh_b]  # DmgMeshKit meshes get a vertex-colour material
     scatter.allow_at = func(x, z): return not is_on_a_road(x, z)   # optional custom filter
     add_child(scatter)
     scatter.setup(terrain, $Camera3D)
+    # For TEXTURED meshes (grass/leaf billboards, props): set scatter.vertex_color_material = false
+    # (keeps each mesh's own material) or assign scatter.material = your_material.
 
     # The green-LCD dither over the whole viewport. Anything on a CanvasLayer ABOVE layer 100
     # (HUD, menus) stays crisp on top of the dithered world.
@@ -88,7 +90,7 @@ add_child(shell)
 # Put your world (camera, terrain, a DmgDither, your DmgUI) under shell.world_viewport:
 shell.world_viewport.add_child(my_world)
 # On a handheld export, shell.console is a DmgConsole — read input from it:
-#   shell.console.move_vector, shell.console.take_look(), is_held("a"), button_pressed signal.
+#   shell.console.move_vector, shell.console.look(), is_held("a"), button_pressed signal.
 ```
 
 `DmgConsole` is a portrait Game Boy faceplate composited from a **sprite skin** in `console/`

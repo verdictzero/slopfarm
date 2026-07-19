@@ -297,17 +297,20 @@ func set_menu_items(list: Array) -> void:
 
 func open_menu() -> void:
 	menu_open = true
-	_lcd.queue_redraw()
+	if _lcd != null:
+		_lcd.queue_redraw()
 
 
 func close_menu() -> void:
 	menu_open = false
-	_lcd.queue_redraw()
+	if _lcd != null:
+		_lcd.queue_redraw()
 
 
 func toggle_menu() -> void:
 	menu_open = not menu_open
-	_lcd.queue_redraw()
+	if _lcd != null:
+		_lcd.queue_redraw()
 
 
 func nav(dir: int) -> void:
