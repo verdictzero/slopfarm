@@ -268,7 +268,6 @@ func _draw_list_panel(r: Rect2) -> void:
 
 func _draw_detail_panel(r: Rect2) -> void:
 	_lcd.draw_style_box(_sb_right, r)
-	_draw_dither(r.grow(-3.0))
 	var title_h := TITLE_FS + 12.0
 	_draw_title(Rect2(r.position.x + 2, r.position.y + 2, r.size.x - 4, title_h),
 			ITEMS[menu_index] + " > INFO")
@@ -306,18 +305,6 @@ func _draw_title(r: Rect2, text: String) -> void:
 	_lcd.draw_style_box(_sb_title, r)
 	_lcd.draw_string(_font, Vector2(r.position.x + 8, r.position.y + (r.size.y + TITLE_FS) * 0.5 - 1),
 			text, HORIZONTAL_ALIGNMENT_LEFT, -1, TITLE_FS, LIT_MID)
-
-
-## A faint 45deg dither tile over the detail panel, matching the reference's checker texture.
-func _draw_dither(r: Rect2) -> void:
-	var c := Color(INK.r, INK.g, INK.b, 0.09)
-	var y := r.position.y
-	while y < r.end.y:
-		var x := r.position.x + (0.0 if int((y - r.position.y) / 2.0) % 2 == 0 else 2.0)
-		while x < r.end.x:
-			_lcd.draw_rect(Rect2(x, y, 2.0, 2.0), c)
-			x += 4.0
-		y += 2.0
 
 
 # --- per-item detail content -------------------------------------------------
