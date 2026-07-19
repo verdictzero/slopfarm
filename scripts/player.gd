@@ -86,6 +86,8 @@ var _hearts: CPUParticles3D
 var _ribbon: MeshInstance3D
 var _ribbon_mesh: ImmediateMesh
 var _ribbon_t: float = 0.0
+## Boot title on the LCD; while it is up play is frozen and the first action dismisses it.
+var _title: TitleScreen
 
 ## The glue economy: sacks currently carried and money earned. The truck the player is driving,
 ## if any (while set, movement is handed to it and the player rides along as the streaming
@@ -129,6 +131,11 @@ func _ready() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_spawn_wand()
 	_spawn_crosshair()
+	_spawn_player_light()
+	# Boot title on the LCD, unless a screenshot rig asked to skip it.
+	if not OS.has_environment("SLOPFARM_NOTITLE"):
+		_title = TitleScreen.new()
+		add_child(_title)
 
 
 ## Whether this build should show touch controls: a real touch device, or an explicitly mobile
@@ -202,6 +209,16 @@ func _tune_collision() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# The boot title swallows input; the first real press dismisses it and starts the game.
+	if _title_active():
+		var press: bool = (event is InputEventKey and (event as InputEventKey).pressed and not (event as InputEventKey).echo) \
+				or (event is InputEventMouseButton and (event as InputEventMouseButton).pressed) \
+				or (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed) \
+				or (event is InputEventJoypadButton and (event as InputEventJoypadButton).pressed)
+		if press:
+			_dismiss_title()
+			get_viewport().set_input_as_handled()
+		return
 	# While the menu is up it owns the keyboard: up/down move the selection, Enter/Space confirm,
 	# Esc/Tab/Backspace close. (Pad and web-shell navigation come per-frame from move_vector.)
 	if _menu_open and event is InputEventKey and event.pressed and not event.echo:
@@ -265,6 +282,8 @@ func _unhandled_input(event: InputEvent) -> void:
 ## The primary action (left-click, or the touch HIT button): swing the wand, or punt a carried
 ## cow. Idle behind the wheel.
 func _primary_action() -> void:
+	if _dismiss_title():
+		return
 	# With the menu up, HIT (A / left-click) confirms the selected entry instead of swinging.
 	if _menu_open:
 		_gbui.activate()
@@ -280,6 +299,8 @@ func _primary_action() -> void:
 ## START (console pill / web START / Tab): raise or dismiss the DMG main menu. Opening it drops any
 ## mouse capture and freezes the player until it is closed.
 func _toggle_menu() -> void:
+	if _dismiss_title():
+		return
 	if _gbui == null:
 		return
 	_menu_open = not _menu_open
@@ -301,6 +322,12 @@ func _on_menu_item(id: String) -> void:
 
 
 func _process(delta: float) -> void:
+	# Frozen behind the boot title; drain any accumulated look so the camera does not snap when it
+	# lifts.
+	if _title_active():
+		if _touch != null:
+			_touch.take_look()
+		return
 	# While the menu is open the pad/stick drives the selection instead of the camera: push up/down
 	# past a deadzone to step one entry, released before it repeats (rising-edge only).
 	if _menu_open:
@@ -378,6 +405,9 @@ func _context_prompt() -> String:
 
 
 func _physics_process(delta: float) -> void:
+	# Fully frozen behind the boot title.
+	if _title_active():
+		return
 	# The menu freezes play: bleed off horizontal motion and let gravity settle the player, but take
 	# no move/jump input while it is up.
 	if _menu_open:
@@ -556,6 +586,8 @@ func _attack() -> void:
 ## intake if you are on it, otherwise set it down. Otherwise, in order: load finished glue at the
 ## factory dock, sell your load at a town market, or grab the ragdoll you are looking at.
 func _interact() -> void:
+	if _dismiss_title():
+		return
 	# With the menu up, USE (B / E / right-click) backs out of it.
 	if _menu_open:
 		_toggle_menu()
@@ -606,6 +638,8 @@ func _try_sell_glue() -> bool:
 ## F: get into the nearest truck, or out of the one being driven. Entering hands the view to the
 ## truck's chase camera; leaving restores the first-person camera and drops the player beside it.
 func _toggle_truck() -> void:
+	if _dismiss_title():
+		return
 	if _driving != null and is_instance_valid(_driving):
 		var drop := _driving.exit()
 		_driving = null
@@ -680,6 +714,8 @@ func _pickup() -> void:
 ## ground there first so you land on collision rather than falling through freshly-streamed
 ## terrain. This is the one guaranteed way out of anything the scenery manages to trap you in.
 func _respawn() -> void:
+	if _dismiss_title():
+		return
 	if _carried != null and is_instance_valid(_carried):
 		_carried.release(Vector3.ZERO)
 	_carried = null
@@ -738,9 +774,9 @@ func _spawn_wand_fx() -> void:
 	# top_level so the wand's large model scale does NOT multiply the particle size; we drive its
 	# world position to the tip each frame instead (see _process).
 	_hearts.top_level = true
-	# 75% smaller than they were (0.14/0.24).
-	_hearts.scale_amount_min = 0.035
-	_hearts.scale_amount_max = 0.06
+	# Tiny — a fine sparkle off the wand tip.
+	_hearts.scale_amount_min = 0.02
+	_hearts.scale_amount_max = 0.035
 	var shrink := Curve.new()
 	shrink.add_point(Vector2(0.0, 1.0))
 	shrink.add_point(Vector2(0.7, 0.9))
@@ -882,6 +918,31 @@ func _spawn_crosshair() -> void:
 		_prompt_label.add_theme_font_override("font", gb_font)
 		_prompt_label.add_theme_font_size_override("font_size", fs)
 	layer.add_child(_prompt_label)
+
+
+## A soft point light carried by the player at about head height, so the world — and dark interiors
+## like the works — lifts a little wherever you are. Shadowless: shadow maps are the frame's cost.
+func _spawn_player_light() -> void:
+	var light := OmniLight3D.new()
+	light.position = Vector3(0.0, 1.4, 0.0)
+	light.omni_range = 18.0
+	light.light_energy = 2.2
+	light.shadow_enabled = false
+	add_child(light)
+
+
+func _title_active() -> bool:
+	return _title != null and is_instance_valid(_title)
+
+
+## Dismiss the boot title if it is up; returns true when it consumed the call so the caller bails
+## instead of also firing its action.
+func _dismiss_title() -> bool:
+	if _title_active():
+		_title.dismiss()
+		_title = null
+		return true
+	return false
 
 
 ## Uniformly scales a model so its combined mesh bounds stand `target` metres tall. The .glb
