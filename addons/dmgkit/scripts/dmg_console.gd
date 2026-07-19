@@ -1,21 +1,23 @@
 extends Control
 class_name DmgConsole
-## An on-screen Game Boy handheld faceplate + touch input, drawn PROCEDURALLY (no bundled art): a
-## cream case with a bezel-framed LCD window showing your world texture, an analog D-pad on the left
-## wing, and configurable face keys on the right. Generalised from slopfarm's touch console.
+## An on-screen portrait Game Boy console faceplate + touch input, composited from a sprite skin: a
+## cream case with a bezel-framed square LCD (your world seats in the glass), a directional D-pad,
+## an A/B/C/X/Y/Z face-key cluster, twin analog thumbsticks, and START/SELECT pills. Keys and the
+## D-pad swap to their pressed art on touch and the stick balls ride their sockets. Ported from
+## slopfarm's console.
 ##
-## "Swappable art" here means the look is data, not baked PNGs:
-##   - every colour is an exported field (case/bezel/ink/accent) — restyle the whole shell by setting them;
-##   - `buttons` is a config array (id, label, caption, position as size-fractions, radius, colour, …);
-##   - set `faceplate` to a Texture2D to paint a custom shell behind the procedural controls;
-##   - `brand_text` / `brand_sub` set the wordmark.
+## SWAPPABLE ART: everything is loaded from `skin_dir` (default the bundled kit). Point it at your
+## own folder with the same filenames + a `layout.json` (shell size, the `screen` bezel placement,
+## and `glass_in_shell`) to reskin the whole shell. If the skin is missing it falls back to showing
+## the world full-rect, so the screen is never black.
 ##
-## Input (multi-touch aware): drag the D-pad to move, drag inside the LCD to look, tap the keys.
-## Read `move_vector`, call `take_look()`, connect `button_pressed(id)` / `button_released(id)`, and
-## check `is_held(id)` / `is_toggled(id)`.
+## INPUT (all generic — nothing game-specific):
+##   move_vector      : Vector2  left stick, -1..1 per axis (y+ = up/forward)
+##   look() -> Vector2: right-stick delta since last call (accumulator), for camera look
+##   dpad_vector      : Vector2  the D-pad as -1/0/1 per axis
+##   button_pressed(id) / button_released(id) signals, is_held(id)  — ids: a b c x y z start select
 
-## True on a real handheld export (or with DMGKIT_TOUCH set). Web is handled by the HTML shell, so it
-## is excluded here. Deliberately NOT keyed on a touchscreen being present (desktop 2-in-1s).
+## True on a real handheld export (or with DMGKIT_TOUCH set); web is handled by an HTML shell.
 static func is_console() -> bool:
 	var web := OS.has_feature("web") or OS.has_environment("DMGKIT_GBSHELL")
 	return not web and (OS.has_feature("mobile") or OS.has_environment("DMGKIT_TOUCH"))
@@ -23,63 +25,65 @@ static func is_console() -> bool:
 signal button_pressed(id: String)
 signal button_released(id: String)
 
-## -1..1 per axis: x = strafe (right +), y = forward (up/forward +).
+## Folder of the skin sprites + layout.json. Swap for your own art.
+@export_dir var skin_dir: String = "res://addons/dmgkit/console"
+
 var move_vector := Vector2.ZERO
+var dpad_vector := Vector2.ZERO
 
-# --- skin (all overridable) --------------------------------------------------
-@export var case_color := Color(0.796, 0.776, 0.729)
-@export var case_hi := Color(0.871, 0.851, 0.804)
-@export var case_lo := Color(0.643, 0.624, 0.573)
-@export var case_edge := Color(0.561, 0.545, 0.498)
-@export var bezel_color := Color(0.275, 0.267, 0.247)
-@export var bezel_hi := Color(0.361, 0.353, 0.325)
-@export var ink := Color(0.169, 0.169, 0.157)
-@export var ink_hi := Color(0.290, 0.290, 0.271)
-@export var label_color := Color(0.431, 0.416, 0.373)
-@export var brand_color := Color(0.176, 0.227, 0.525)
-@export var accent := Color(0.541, 0.122, 0.239)          # face-key / power dot colour
-@export var accent_hi := Color(0.690, 0.204, 0.329)
-@export var brand_text := "POCKET"
-@export var brand_sub := "DMG-1"
-## Optional painted shell behind the procedural controls (stretched to fill).
-@export var faceplate: Texture2D
+const DEAD := 0.16          # D-pad dead zone
+const STICK_MAX := 0.34     # fraction of the socket the thumb can travel
 
-## Face keys. Positions are FRACTIONS of the full size so they scale to any screen. Each:
-## {id, label, sub, fx, fy, r, big, toggle, pill}. Leave null to use the classic A/B/START/SELECT set.
-var buttons: Array = []
+# Control layout in shell (448x900) units — matches slopfarm's pad.
+const BTN_W := 80.0
+const BTN_H := 83.0
+const DPAD_W := 184.0
+const STICK_W := 144.0
+const BALL_W := 78.0
+const BALL_H := 86.0
+const BALL_DY := 4.0
+const PILL_W := 108.0
+const PILL_H := 49.4
+# id, centre x, centre y. Saturn-pad arc: A/B on the right (accent), C/Z then X/Y stepping left.
+const BUTTONS := [
+	["x", 260.0, 560.0], ["c", 334.0, 540.0], ["a", 408.0, 520.0],
+	["y", 260.0, 638.0], ["z", 334.0, 618.0], ["b", 408.0, 598.0],
+]
+const DPAD_C := Vector2(100.0, 566.0)
+const STICK_L := Vector2(104.0, 752.0)
+const STICK_R := Vector2(330.0, 752.0)
+const PILL_SEL := Vector2(162.0, 856.0)
+const PILL_START := Vector2(286.0, 856.0)
 
-const STICK_RADIUS := 46.0
-const DPAD_ARM := 30.0
-
-var _font: Font
-var _lcd: TextureRect
 var _lcd_texture: Texture2D
-var _screen_rect := Rect2()
-var _left_wing := 0.0
-var _right_wing := 0.0
-var _top_bar := 0.0
-var _bottom_bar := 0.0
-var _resolved: Array = []       # buttons with absolute positions filled in
+var _shell_w := 448.0
+var _shell_h := 900.0
+var _case: Control
+var _lcd: TextureRect
 
-var _stick_touch := -1
-var _stick_center := Vector2.ZERO
-var _stick_knob := Vector2.ZERO
-var _look_touch := -1
-var _look_last := Vector2.ZERO
+var _btns := {}             # id -> {node, idle, pressed}
+var _dpad_node: TextureRect
+var _dpad_tex := {}
+var _pills := {}            # "start"/"select" -> {node, idle, pressed}
+var _sticks := {}           # "left"/"right" -> {pivot, ball, idle, pressed}
+var _held := {}
 var _look_accum := Vector2.ZERO
-var _btn_touches: Dictionary = {}
-var _held: Dictionary = {}
-var _toggles: Dictionary = {}
+
+var _dp_touch := -1
+var _l_touch := -1
+var _r_touch := -1
+var _btn_touches := {}
 
 
-## Point the LCD window at the world. Pass a SubViewport's get_texture().
+## Point the LCD window at your world (a SubViewport's get_texture()).
 func set_lcd(texture: Texture2D) -> void:
 	_lcd_texture = texture
 	if _lcd != null:
 		_lcd.texture = texture
 
 
-func take_look() -> Vector2:
+## Right-stick look delta accumulated since the last call, in stick units; cleared.
+func look() -> Vector2:
 	var d := _look_accum
 	_look_accum = Vector2.ZERO
 	return d
@@ -89,215 +93,273 @@ func is_held(id: String) -> bool:
 	return _held.get(id, false)
 
 
-func is_toggled(id: String) -> bool:
-	return _toggles.get(id, false)
-
-
-func _default_buttons() -> Array:
-	return [
-		{"id": "a", "label": "A", "sub": "", "fx": 0.93, "fy": 0.52, "r": 27.0, "big": true},
-		{"id": "b", "label": "B", "sub": "", "fx": 0.855, "fy": 0.40, "r": 23.0, "big": true},
-		{"id": "start", "label": "START", "sub": "", "fx": 0.545, "fy": 0.955, "r": 15.0, "pill": true},
-		{"id": "select", "label": "SELECT", "sub": "", "fx": 0.44, "fy": 0.955, "r": 15.0, "pill": true},
-	]
+func _asset(name: String) -> String:
+	return skin_dir.path_join(name)
 
 
 func _ready() -> void:
-	_font = ThemeDB.fallback_font
-	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if buttons.is_empty():
-		buttons = _default_buttons()
-
-	_lcd = TextureRect.new()
-	_lcd.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_lcd.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_lcd.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_lcd.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if _lcd_texture != null:
-		_lcd.texture = _lcd_texture
-	add_child(_lcd)
-
-	get_viewport().size_changed.connect(_layout)
-	_layout()
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_build()
 
 
-func _viewport_size() -> Vector2:
-	return get_viewport().get_visible_rect().size
+func _load_layout() -> Dictionary:
+	var path := _asset("layout.json")
+	if not FileAccess.file_exists(path):
+		return {}
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return {}
+	var data = JSON.parse_string(f.get_as_text())
+	return data if data is Dictionary else {}
 
 
-func _layout() -> void:
-	var vp := _viewport_size()
-	size = vp
-	var w := vp.x
-	var h := vp.y
+func _build() -> void:
+	var layout := _load_layout()
+	if layout.is_empty():
+		# No skin — present the world full-rect so the screen is never black.
+		var fb := TextureRect.new()
+		fb.texture = _lcd_texture
+		fb.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		fb.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		fb.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		fb.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		fb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(fb)
+		return
+	_shell_w = float(layout["shell"]["w"])
+	_shell_h = float(layout["shell"]["h"])
 
-	_left_wing = roundf(w * 0.185)
-	_right_wing = roundf(w * 0.185)
-	_top_bar = roundf(h * 0.05)
-	_bottom_bar = roundf(h * 0.09)
-	_screen_rect = Rect2(_left_wing, _top_bar, w - _left_wing - _right_wing, h - _top_bar - _bottom_bar)
+	var room := ColorRect.new()
+	room.color = Color(0.09, 0.09, 0.11)
+	room.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	room.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(room)
 
-	if _lcd != null:
-		_lcd.position = _screen_rect.position
-		_lcd.size = _screen_rect.size
+	var fit := AspectRatioContainer.new()
+	fit.ratio = _shell_w / _shell_h
+	fit.stretch_mode = AspectRatioContainer.STRETCH_FIT
+	fit.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	fit.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(fit)
 
-	_stick_center = Vector2(_left_wing * 0.5, h * 0.5)
-	_stick_knob = _stick_center
+	_case = Control.new()
+	_case.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fit.add_child(_case)
 
-	_resolved = []
-	for b in buttons:
-		var e: Dictionary = (b as Dictionary).duplicate()
-		e["pos"] = Vector2(float(b["fx"]) * w, float(b["fy"]) * h)
-		_resolved.append(e)
-	queue_redraw()
+	_rect(load(_asset("case.png")), -4, -4, _shell_w + 8, _shell_h + 8)
+	for pl in layout["placements"]:
+		if String(pl["id"]) == "screen":
+			_rect(load(_asset("bezel.png")), pl["x"], pl["y"], pl["w"], pl["h"])
+			break
+	var g: Dictionary = layout["glass_in_shell"]
+	_lcd = _rect(_lcd_texture, g["x"], g["y"], g["w"], g["h"], true, true)
+	_lcd.name = "Lcd"
+
+	_build_brand(g)
+	_build_dpad()
+	_build_buttons()
+	_build_sticks()
+	_build_pills()
 
 
+# ---- placement helpers ------------------------------------------------------
+func _rect(tex: Texture2D, x: float, y: float, w: float, h: float,
+		nearest := false, aspect := false) -> TextureRect:
+	var tr := TextureRect.new()
+	tr.texture = tex
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED if aspect else TextureRect.STRETCH_SCALE
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST if nearest else CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_case.add_child(tr)
+	tr.anchor_left = x / _shell_w
+	tr.anchor_top = y / _shell_h
+	tr.anchor_right = (x + w) / _shell_w
+	tr.anchor_bottom = (y + h) / _shell_h
+	tr.offset_left = 0.0; tr.offset_top = 0.0; tr.offset_right = 0.0; tr.offset_bottom = 0.0
+	return tr
+
+
+func _at(tex: Texture2D, cx: float, cy: float, w: float, h: float) -> TextureRect:
+	return _rect(tex, cx - w * 0.5, cy - h * 0.5, w, h)
+
+
+func _build_brand(g: Dictionary) -> void:
+	var gl := float(g["x"])
+	var gr := float(g["x"]) + float(g["w"])
+	var y := 36.0
+	var mp := _asset("brand_mark.png")
+	if ResourceLoader.exists(mp):
+		var m: Texture2D = load(mp)
+		var mh := 15.0
+		_rect(m, gl, y - mh * 0.5, mh * float(m.get_width()) / float(m.get_height()), mh)
+	var pp := _asset("brand_power.png")
+	if ResourceLoader.exists(pp):
+		var pt: Texture2D = load(pp)
+		var ph := 12.0
+		_rect(pt, gr - ph * float(pt.get_width()) / float(pt.get_height()), y - ph * 0.5,
+				ph * float(pt.get_width()) / float(pt.get_height()), ph)
+
+
+func _build_dpad() -> void:
+	for k in ["idle", "up", "down", "left", "right"]:
+		_dpad_tex[k] = load(_asset("dpad_" + k + ".png"))
+	_dpad_node = _at(_dpad_tex["idle"], DPAD_C.x, DPAD_C.y, DPAD_W, DPAD_W)
+
+
+func _build_buttons() -> void:
+	for e in BUTTONS:
+		var id: String = e[0]
+		var up := "btn_" + id.to_upper()
+		var idle: Texture2D = load(_asset(up + "_idle.png"))
+		var pressed: Texture2D = load(_asset(up + "_pressed.png"))
+		var node := _at(idle, e[1], e[2], BTN_W, BTN_H)
+		_btns[id] = {"node": node, "idle": idle, "pressed": pressed}
+
+
+func _build_sticks() -> void:
+	var pivot: Texture2D = load(_asset("stick_pivot.png"))
+	var ball_idle: Texture2D = load(_asset("stick_ball.png"))
+	var ball_pressed: Texture2D = load(_asset("stick_ball_pressed.png"))
+	for side in ["left", "right"]:
+		var c: Vector2 = STICK_L if side == "left" else STICK_R
+		var pv := _at(pivot, c.x, c.y, STICK_W, STICK_W)
+		var ball := _at(ball_idle, c.x, c.y + BALL_DY, BALL_W, BALL_H)
+		_sticks[side] = {"pivot": pv, "ball": ball, "idle": ball_idle, "pressed": ball_pressed}
+
+
+func _build_pills() -> void:
+	var idle: Texture2D = load(_asset("pill_idle.png"))
+	var pressed: Texture2D = load(_asset("pill_pressed.png"))
+	for e in [["select", PILL_SEL], ["start", PILL_START]]:
+		var node := _at(idle, e[1].x, e[1].y, PILL_W, PILL_H)
+		_pills[e[0]] = {"node": node, "idle": idle, "pressed": pressed}
+
+
+# ---- touch ------------------------------------------------------------------
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		var t := event as InputEventScreenTouch
 		if t.pressed:
-			_on_press(t.index, t.position)
+			_press(t.index, t.position)
 		else:
-			_on_release(t.index)
+			_release(t.index)
 	elif event is InputEventScreenDrag:
 		var d := event as InputEventScreenDrag
-		_on_drag(d.index, d.position)
+		if d.index == _dp_touch:
+			_update_dpad(d.position)
+		elif d.index == _l_touch:
+			_update_stick("left", d.position)
+		elif d.index == _r_touch:
+			_update_stick("right", d.position)
 
 
-func _on_press(index: int, pos: Vector2) -> void:
-	for b in _resolved:
-		if pos.distance_to(b["pos"]) <= float(b["r"]) + 6.0:
-			var id := String(b["id"])
-			_btn_touches[index] = id
-			_held[id] = true
-			if bool(b.get("toggle", false)):
-				_toggles[id] = not _toggles.get(id, false)
-			button_pressed.emit(id)
-			queue_redraw()
-			return
-	if _stick_touch == -1 and pos.x < _left_wing and pos.y > _top_bar:
-		_stick_touch = index
-		_update_stick(pos)
+func _press(index: int, pos: Vector2) -> void:
+	var best := ""
+	var best_d := INF
+	for id in _btns:
+		var rect: Rect2 = _btns[id]["node"].get_global_rect()
+		if rect.has_point(pos):
+			var dd := pos.distance_squared_to(rect.get_center())
+			if dd < best_d:
+				best_d = dd
+				best = id
+	for id in _pills:
+		if _pills[id]["node"].get_global_rect().has_point(pos):
+			best = id
+			break
+	if best != "":
+		_btn_touches[index] = best
+		_button_down(best)
 		return
-	if _look_touch == -1 and _screen_rect.has_point(pos):
-		_look_touch = index
-		_look_last = pos
+	if _dp_touch == -1 and _dpad_node.get_global_rect().has_point(pos):
+		_dp_touch = index
+		_update_dpad(pos)
+		return
+	if _l_touch == -1 and _sticks["left"]["pivot"].get_global_rect().has_point(pos):
+		_l_touch = index
+		_update_stick("left", pos)
+		return
+	if _r_touch == -1 and _sticks["right"]["pivot"].get_global_rect().has_point(pos):
+		_r_touch = index
+		_update_stick("right", pos)
 
 
-func _on_drag(index: int, pos: Vector2) -> void:
-	if index == _stick_touch:
-		_update_stick(pos)
-	elif index == _look_touch:
-		_look_accum += pos - _look_last
-		_look_last = pos
-
-
-func _on_release(index: int) -> void:
-	if index == _stick_touch:
-		_stick_touch = -1
-		move_vector = Vector2.ZERO
-		_stick_knob = _stick_center
-		queue_redraw()
-	elif index == _look_touch:
-		_look_touch = -1
+func _release(index: int) -> void:
+	if index == _dp_touch:
+		_dp_touch = -1
+		dpad_vector = Vector2.ZERO
+		_dpad_node.texture = _dpad_tex["idle"]
+	elif index == _l_touch:
+		_l_touch = -1
+		_reset_stick("left")
+	elif index == _r_touch:
+		_r_touch = -1
+		_reset_stick("right")
 	elif _btn_touches.has(index):
-		var id: String = _btn_touches[index]
+		_button_up(_btn_touches[index])
 		_btn_touches.erase(index)
-		_held[id] = false
-		button_released.emit(id)
-		queue_redraw()
 
 
-func _update_stick(pos: Vector2) -> void:
-	var off := pos - _stick_center
-	if off.length() > STICK_RADIUS:
-		off = off.normalized() * STICK_RADIUS
-	_stick_knob = _stick_center + off
-	move_vector = Vector2(off.x / STICK_RADIUS, -off.y / STICK_RADIUS)
-	queue_redraw()
+func _button_down(id: String) -> void:
+	_held[id] = true
+	button_pressed.emit(id)
+	if _btns.has(id):
+		_btns[id]["node"].texture = _btns[id]["pressed"]
+	elif _pills.has(id):
+		_pills[id]["node"].texture = _pills[id]["pressed"]
 
 
-# ---- drawing ----------------------------------------------------------------
+func _button_up(id: String) -> void:
+	_held[id] = false
+	button_released.emit(id)
+	if _btns.has(id):
+		_btns[id]["node"].texture = _btns[id]["idle"]
+	elif _pills.has(id):
+		_pills[id]["node"].texture = _pills[id]["idle"]
 
-func _draw() -> void:
-	var w := size.x
-	var h := size.y
-	if faceplate != null:
-		draw_texture_rect(faceplate, Rect2(0, 0, w, h), false)
+
+func _update_dpad(pos: Vector2) -> void:
+	var rect: Rect2 = _dpad_node.get_global_rect()
+	var c := rect.get_center()
+	var nx := (pos.x - c.x) / (rect.size.x * 0.5)
+	var ny := (pos.y - c.y) / (rect.size.y * 0.5)
+	dpad_vector = Vector2(
+		(1.0 if nx > DEAD else 0.0) - (1.0 if nx < -DEAD else 0.0),
+		(1.0 if ny < -DEAD else 0.0) - (1.0 if ny > DEAD else 0.0))   # y+ = up
+	var t := "idle"
+	if absf(ny) >= absf(nx):
+		if ny < -DEAD: t = "up"
+		elif ny > DEAD: t = "down"
 	else:
-		# Cream case: the four bars around the LCD window.
-		draw_rect(Rect2(0, 0, _left_wing, h), case_color)
-		draw_rect(Rect2(w - _right_wing, 0, _right_wing, h), case_color)
-		draw_rect(Rect2(0, 0, w, _top_bar), case_color)
-		draw_rect(Rect2(0, h - _bottom_bar, w, _bottom_bar), case_color)
-		draw_line(Vector2(0, 1), Vector2(w, 1), case_hi, 2.0)
-		draw_line(Vector2(0, h - _bottom_bar + 1), Vector2(w, h - _bottom_bar + 1), case_hi, 1.0)
-		draw_line(Vector2(0, h - 1), Vector2(w, h - 1), case_lo, 2.0)
-		draw_line(Vector2(_left_wing - 1, _top_bar), Vector2(_left_wing - 1, h - _bottom_bar), case_edge, 1.0)
-		draw_line(Vector2(w - _right_wing + 1, _top_bar), Vector2(w - _right_wing + 1, h - _bottom_bar), case_edge, 1.0)
-
-	# Bezel around the LCD window.
-	var frame := _screen_rect.grow(4.0)
-	draw_rect(frame, bezel_color, false, 8.0)
-	draw_line(frame.position + Vector2(0, -3), frame.position + Vector2(frame.size.x, -3), bezel_hi, 1.0)
-
-	_draw_branding(w, h)
-	_draw_dpad()
-	for b in _resolved:
-		_draw_key(b)
+		if nx < -DEAD: t = "left"
+		elif nx > DEAD: t = "right"
+	_dpad_node.texture = _dpad_tex[t]
 
 
-func _draw_branding(w: float, h: float) -> void:
-	if _font == null or faceplate != null:
-		return
-	var fs := int(clampf(_top_bar * 0.62, 8.0, 13.0))
-	draw_string(_font, Vector2(6, _top_bar * 0.5 + fs * 0.35), brand_text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, fs, label_color)
-	var mark_x := 6.0 + _font.get_string_size(brand_text + " ", HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	draw_string(_font, Vector2(mark_x, _top_bar * 0.5 + fs * 0.35), brand_sub,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, fs, brand_color)
-	draw_circle(Vector2(w - 14, _top_bar * 0.5), 3.0, accent)
-
-
-func _draw_dpad() -> void:
-	var c := _stick_center
-	var arm := DPAD_ARM
-	var thick := arm * 0.72
-	draw_rect(Rect2(c.x - arm, c.y - thick * 0.5, arm * 2.0, thick), ink)
-	draw_rect(Rect2(c.x - thick * 0.5, c.y - arm, thick, arm * 2.0), ink)
-	draw_line(Vector2(c.x - arm, c.y - thick * 0.5), Vector2(c.x + arm, c.y - thick * 0.5), ink_hi, 1.0)
-	draw_line(Vector2(c.x - thick * 0.5, c.y - arm), Vector2(c.x - thick * 0.5, c.y + arm), ink_hi, 1.0)
-	draw_circle(c, thick * 0.34, ink_hi)
-	draw_circle(_stick_knob, 9.0, case_hi)
-	draw_arc(_stick_knob, 9.0, 0, TAU, 20, case_lo, 1.5)
-
-
-func _draw_key(b: Dictionary) -> void:
-	var pos: Vector2 = b["pos"]
-	var r: float = b["r"]
-	var col := accent
-	if bool(b.get("toggle", false)) and _toggles.get(String(b["id"]), false):
-		col = accent_hi
-	elif bool(b.get("pill", false)):
-		col = ink
-	if bool(b.get("pill", false)):
-		var half := Vector2(r * 1.6, r * 0.55)
-		draw_rect(Rect2(pos - half, half * 2.0), col)
-		draw_circle(pos - Vector2(half.x, 0), half.y, col)
-		draw_circle(pos + Vector2(half.x, 0), half.y, col)
+func _update_stick(side: String, pos: Vector2) -> void:
+	var s: Dictionary = _sticks[side]
+	var rect: Rect2 = s["pivot"].get_global_rect()
+	var c := rect.get_center()
+	var max_r := rect.size.x * STICK_MAX
+	var d := pos - c
+	if d.length() > max_r:
+		d = d.normalized() * max_r
+	var ball: TextureRect = s["ball"]
+	ball.offset_left = d.x; ball.offset_top = d.y; ball.offset_right = d.x; ball.offset_bottom = d.y
+	ball.texture = s["pressed"]
+	var v := d / max_r
+	if side == "left":
+		move_vector = Vector2(v.x, -v.y)     # y+ = up/forward
 	else:
-		draw_circle(pos, r, col)
-		draw_arc(pos, r - 1.0, PI * 1.05, TAU * 0.98, 24, accent_hi, 2.0)
-		draw_arc(pos, r, 0, TAU, 28, case_lo, 1.0)
-	if _font == null:
-		return
-	var label := String(b["label"])
-	var fs := maxi(int(r * (0.8 if bool(b.get("big", false)) else 0.62)), 9)
-	var tw := _font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	draw_string(_font, pos + Vector2(-tw * 0.5, fs * 0.36), label,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.96, 0.94, 0.92))
-	var sub := String(b.get("sub", ""))
-	if sub != "":
-		var sw := _font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 9).x
-		draw_string(_font, pos + Vector2(-sw * 0.5, r + 9 + 1.0), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, label_color)
+		_look_accum += v
+
+
+func _reset_stick(side: String) -> void:
+	var s: Dictionary = _sticks[side]
+	var ball: TextureRect = s["ball"]
+	ball.offset_left = 0.0; ball.offset_top = 0.0; ball.offset_right = 0.0; ball.offset_bottom = 0.0
+	ball.texture = s["idle"]
+	if side == "left":
+		move_vector = Vector2.ZERO

@@ -17,7 +17,7 @@ Built for the **GL Compatibility (mobile)** renderer.
 | `DmgMeshKit` | `scripts/dmg_mesh_kit.gd` | Procedural vertex-coloured mesh builder — `box/quad/cylinder/cone/pipe/sphere/torus/…` merged into one flat-shaded mesh. |
 | `DmgUI` | `scripts/dmg_ui.gd` | The DMG HUD + two-column menu (readout chips, list/detail/stats/description), pixel font, DMG palette. Content is data you set. |
 | `DmgTitle` | `scripts/dmg_title.gd` | A boot title card: a cover image (or a rendered title string) plus a blinking "PRESS START". |
-| `DmgConsole` | `scripts/dmg_console.gd` | An on-screen handheld faceplate + touch input, drawn procedurally — configurable palette, buttons, and an optional skin texture. |
+| `DmgConsole` | `scripts/dmg_console.gd` | An on-screen portrait handheld faceplate + touch input, composited from a sprite skin (`console/`): D-pad, A/B/C/X/Y/Z cluster, twin analog sticks, START/SELECT. Swap `skin_dir` to reskin. |
 | `DmgShell` | `scripts/dmg_shell.gd` | Renders your world into a fixed-resolution SubViewport (so the dither runs at constant "LCD" res) and presents it via `DmgConsole` (mobile) or a crisp bare LCD (desktop/web). |
 
 Shaders + LUT live in `shaders/`, the pixel font (Press Start 2P, OFL) in `fonts/`. A runnable
@@ -91,10 +91,18 @@ shell.world_viewport.add_child(my_world)
 #   shell.console.move_vector, shell.console.take_look(), is_held("a"), button_pressed signal.
 ```
 
-`DmgConsole` is drawn procedurally (no art needed) and is fully skinnable: set its colour fields
-(`case_color`, `bezel_color`, `accent`, …), the `brand_text`/`brand_sub` wordmark, the `buttons`
-array (id/label/caption/position-as-fractions/radius/colour), or drop in a painted `faceplate`
-`Texture2D`. Default buttons are the classic A / B / START / SELECT.
+`DmgConsole` is a portrait Game Boy faceplate composited from a **sprite skin** in `console/`
+(the case, bezel, D-pad direction states, the A/B/C/X/Y/Z keys with idle/pressed art, twin analog
+sticks, and START/SELECT pills), laid out from `console/layout.json`. It reads:
+
+- `move_vector` — left analog stick (−1..1, y+ = forward)
+- `look()` — right-stick delta since the last call (camera look)
+- `dpad_vector` — the D-pad as −1/0/1 per axis
+- `button_pressed(id)` / `button_released(id)` signals and `is_held(id)` — ids `a b c x y z start select`
+
+**Swappable art:** point `skin_dir` at your own folder with the same filenames + a `layout.json`
+(shell size, the `screen` bezel placement, and `glass_in_shell`) to reskin the whole shell. With no
+skin it falls back to showing the world full-rect, so the screen is never black.
 
 ## Notes
 
