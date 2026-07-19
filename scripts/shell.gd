@@ -1,6 +1,6 @@
 extends Control
 class_name GBShell
-## Root of main.tscn. Renders the whole game into a fixed 640x360 World SubViewport (so the dither
+## Root of main.tscn. Renders the whole game into a fixed 1080x1080 World SubViewport (so the dither
 ## post-process keeps running at native res), then presents it two ways:
 ##   - native mobile: a portrait Game Boy console composited from PNG assets (console_pad.gd), with
 ##     input injected into the player via a ShellInput found through the "player" group;
@@ -26,8 +26,9 @@ func _ready() -> void:
 		_forward_input = true
 
 
-## Desktop / web: the game is sized to a whole multiple of 640x360 and centred, so NEAREST scaling
-## stays crisp rather than shimmering at fractional factors.
+## Desktop / web: the game is sized to a whole multiple of the 1080x1080 buffer and centred, so
+## NEAREST scaling stays crisp rather than shimmering at fractional factors (or fit whole to the
+## window when the buffer is larger than it — see _fit_bare).
 func _build_bare(tex: Texture2D) -> void:
 	_bare_lcd = TextureRect.new()
 	_bare_lcd.texture = tex
@@ -45,7 +46,12 @@ func _fit_bare() -> void:
 		return
 	var game := Vector2(_world.size)
 	var view := get_viewport().get_visible_rect().size
-	var s := maxf(1.0, floor(minf(view.x / game.x, view.y / game.y)))
+	var raw := minf(view.x / game.x, view.y / game.y)
+	# Integer-upscale when the buffer fits the window, so NEAREST stays crisp rather than shimmering
+	# at fractional factors. When the buffer is LARGER than the window (the 1080 LCD in a small
+	# desktop/web window), fall back to fit-to-view so the whole screen shows instead of being
+	# clipped. The native console path scales into its glass rect and never comes through here.
+	var s: float = floor(raw) if raw >= 1.0 else raw
 	var dim := game * s
 	_bare_lcd.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_bare_lcd.size = dim

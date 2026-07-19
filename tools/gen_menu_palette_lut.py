@@ -5,8 +5,8 @@ Run from the project root:  python3 tools/gen_menu_palette_lut.py
 
 Overwrites:
   shaders/lut_512.png      the 64x64x64 cube the dither shader snaps through, so every colour in
-                           the frame maps to the nearest of the 16 menu greens.
-  shaders/palette_512.png  a documentation-only swatch of the 16 shades (nothing samples it).
+                           the frame maps to the nearest of the 64 menu greens.
+  shaders/palette_512.png  a documentation-only swatch of the 64 shades (nothing samples it).
 
 Why these greens: the LCD interface (scripts/gb_ui.gd) is hand-tokened in the classic DMG
 "pea-green" ramp -- INK #0f380f at the dark end up to the lit-capsule highlight #cfe27a. The world
@@ -16,10 +16,10 @@ palette straight from the eight distinct green design tokens in gb_ui.gd, so the
 the menu are finally one screen.
 
 The eight tokens are only a spine: we walk them in Oklab (perceptually even steps, not raw RGB) and
-resample to 16 shades, dark -> light. The endpoints land exactly on the menu's darkest and lightest
-greens; the ramp passes through every token in between. The heavy work -- nearest-colour mapping of
-the whole RGB cube in Oklab -- is reused from gen_palette_lut.build_lut; this file only supplies the
-16-colour palette.
+resample to 64 shades, dark -> light -- a near-continuous monochrome green ramp. The endpoints land
+exactly on the menu's darkest and lightest greens; the ramp passes through every token in between.
+The heavy work -- nearest-colour mapping of the whole RGB cube in Oklab -- is reused from
+gen_palette_lut.build_lut; this file only supplies the 64-colour palette.
 """
 import os
 import sys
@@ -44,7 +44,7 @@ MENU_GREENS = [
     "a8c520",
     "cfe27a",
 ]
-COLORS = 16
+COLORS = 64
 
 
 def hex_to_rgb(h):
@@ -82,12 +82,13 @@ def menu_palette(n=COLORS):
 
 def main():
     pal = menu_palette()
-    print("menu DMG green palette (%d shades):" % len(pal))
-    for c in pal:
-        print("  #%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2])))
+    print("menu DMG green palette (%d shades), dark -> light:" % len(pal))
+    for i in range(0, len(pal), 8):
+        print("  " + "  ".join("#%02x%02x%02x" % (int(c[0]), int(c[1]), int(c[2]))
+                               for c in pal[i:i + 8]))
 
-    # Doc-only swatch: each shade a 16x16 block, two rows of eight.
-    grid = pal.reshape(2, 8, 3)
+    # Doc-only swatch: each shade a 16x16 block, four rows of sixteen (dark -> light).
+    grid = pal.reshape(4, 16, 3)
     grid = np.repeat(np.repeat(grid, 16, axis=0), 16, axis=1)
     Image.fromarray(grid, "RGB").save("shaders/palette_512.png")
 

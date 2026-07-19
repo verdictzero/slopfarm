@@ -1,7 +1,7 @@
 shader_type canvas_item;
 render_mode unshaded;
 
-// Post-process: the world redrawn as an old dot-matrix LCD in the 16 Game Boy greens baked into
+// Post-process: the world redrawn as an old dot-matrix LCD in the 64 Game Boy greens baked into
 // lut_512.png -- the SAME pea-green ramp the menu chrome is tokened in (see
 // tools/gen_menu_palette_lut.py), so the dithered world and the UI are one screen.
 //
@@ -10,9 +10,9 @@ render_mode unshaded;
 //      Each cell samples the world ONCE, at its centre, so a whole cell carries one colour -- the
 //      chunky "LCD dot" the real hardware had, independent of how far the buffer is upscaled after.
 //   2. Ordered dither + palette snap. Each cell is nudged by its Bayer threshold and snapped to the
-//      nearest of the 16 greens via one LUT fetch (a 64x64x64 RGB cube flattened into an 8x8 grid
+//      nearest of the 64 greens via one LUT fetch (a 64x64x64 RGB cube flattened into an 8x8 grid
 //      of 64x64 blue slices). The dither is keyed to the CELL, not the native pixel, so the pattern
-//      lives at dot resolution and fakes the shades between the 16 the way a DMG screen did.
+//      lives at dot resolution and fakes the shades between the 64 the way a DMG screen did.
 //   3. Hard grid. The leading edge of every cell is darkened toward the palette's darkest green,
 //      drawing the unlit lattice between dots -- the gap you see on an actual LCD.
 
@@ -22,9 +22,9 @@ uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
 uniform sampler2D lut_tex : filter_nearest, repeat_disable;
 
 uniform float dither_strength : hint_range(0.0, 0.5) = 0.17;
-// Native buffer pixels per LCD dot. The world SubViewport is 360x360 and integer-upscaled to the
-// window, so 3 makes each dot a 3x3 block of native pixels (a 120x120 dot grid). >= 2 to leave
-// room for the lattice line; 1 collapses back to a per-pixel dither with no grid.
+// Native buffer pixels per LCD dot. The world SubViewport is 1080x1080 and scaled to the LCD, so 3
+// makes each dot a 3x3 block of native pixels (a 360x360 dot grid). >= 2 to leave room for the
+// lattice line; 1 collapses back to a per-pixel dither with no grid.
 uniform float grid_size : hint_range(1.0, 8.0) = 3.0;
 // Width, in native pixels, of the dark lattice line drawn along each dot's leading edges.
 uniform float grid_gap : hint_range(0.0, 3.0) = 1.0;

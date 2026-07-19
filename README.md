@@ -374,33 +374,36 @@ nothing detectable (identical medians on every pass that has structures in view)
 
 ## The palette and dither
 
-The whole world is redrawn as an old dot-matrix LCD in the **same 16 Game Boy greens the
-menu is painted in**. `scripts/gb_ui.gd` tokens the LCD interface in the classic DMG
-"pea-green" ramp (`INK #0f380f` up to the lit highlight `#cfe27a`); the post-process snaps
-the world to that same ramp, so the dithered scene and the UI chrome are one screen rather
-than two different greens.
+The whole world is redrawn as an old dot-matrix LCD in the **same Game Boy greens the menu
+is painted in**. `scripts/gb_ui.gd` tokens the LCD interface in the classic DMG "pea-green"
+ramp (`INK #0f380f` up to the lit highlight `#cfe27a`); the post-process snaps the world to
+that same ramp, so the dithered scene and the UI chrome are one screen rather than two
+different greens.
 
 `tools/gen_menu_palette_lut.py` bakes both committed PNGs in `shaders/` from those eight
-design tokens — rerun it after changing the menu greens:
+design tokens — rerun it after changing the menu greens (`COLORS` at the top sets the shade
+count):
 
     python3 tools/gen_menu_palette_lut.py     # needs numpy + pillow
 
-- **`palette_512.png`** — the 16 shades as a reference swatch, nothing samples it.
+- **`palette_512.png`** — the 64 shades as a reference swatch, nothing samples it.
 - **`lut_512.png`** — the lookup table the shader actually samples: a 64×64×64 RGB cube
   flattened to an 8×8 grid of blue slices, each cell pre-solved (in Oklab) to the nearest
-  of the 16 greens. This turns a 16-way search into one texture fetch.
+  of the 64 greens. This turns a 64-way search into one texture fetch.
 
 The eight tokens are only a spine: the tool walks them in Oklab (perceptually even steps,
-not raw RGB) and resamples to 16 shades, dark → light, so the endpoints land exactly on the
-menu's darkest and lightest greens and the ramp passes through every token between. It reuses
-`gen_palette_lut.py`'s `build_lut` (the Oklab nearest-colour engine); that older script and
-its 512-colour retro palette are kept only as that shared engine.
+not raw RGB) and resamples to 64 shades, dark → light — a near-continuous monochrome green
+ramp — so the endpoints land exactly on the menu's darkest and lightest greens and the ramp
+passes through every token between. It reuses `gen_palette_lut.py`'s `build_lut` (the Oklab
+nearest-colour engine); that older script and its 512-colour retro palette are kept only as
+that shared engine.
 
 `shaders/dither_lut.gdshader` does three things, in order:
 
-- **Pseudo pixels.** The native buffer is diced into a hard grid of `grid_size × grid_size`
-  cells (default 3). Each cell samples the world once, at its centre, so a whole cell carries
-  one colour — the chunky LCD dot, independent of how far the buffer is upscaled afterward.
+- **Pseudo pixels.** The world SubViewport renders at 1080×1080 and the buffer is diced into a
+  hard grid of `grid_size × grid_size` cells (default 3, a 360×360 dot grid). Each cell samples
+  the world once, at its centre, so a whole cell carries one colour — the LCD dot, independent
+  of how far the buffer is scaled into the console glass afterward.
 - **Ordered dither + palette snap.** Each cell is nudged by a 4×4 Bayer threshold keyed to the
   cell (not the native pixel, so the pattern lives at dot resolution) and snapped through the
   LUT. The offset is what breaks quantisation into a pattern instead of flat banding; being

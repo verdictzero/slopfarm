@@ -806,22 +806,27 @@ func _wand_mat(color: Color, metallic: float, roughness: float) -> StandardMater
 func _spawn_crosshair() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
+	# These overlays are sized in the same 360-tall design space as the GBUI. The world SubViewport
+	# now renders at 3x that, so scale every fixed offset and font size by the buffer/design ratio to
+	# hold their apparent size (a clean 3x at 1080, a no-op at the old 360).
+	var s := maxf(1.0, get_viewport().get_visible_rect().size.y / GBUI.DESIGN)
+	var fs := int(round(8.0 * s))
 	var layer := CanvasLayer.new()
 	layer.layer = 110
 	add_child(layer)
 	var dot := ColorRect.new()
 	dot.color = Color(0.808, 0.886, 0.478, 0.75)   # lit_hi green
 	dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# Anchored to the screen centre and given a fixed 4x4 offset box, so it stays put at any
-	# window size rather than depending on a preset's kept offsets.
+	# Anchored to the screen centre and given a fixed offset box, so it stays put at any window size
+	# rather than depending on a preset's kept offsets.
 	dot.anchor_left = 0.5
 	dot.anchor_top = 0.5
 	dot.anchor_right = 0.5
 	dot.anchor_bottom = 0.5
-	dot.offset_left = -2.0
-	dot.offset_top = -2.0
-	dot.offset_right = 2.0
-	dot.offset_bottom = 2.0
+	dot.offset_left = -2.0 * s
+	dot.offset_top = -2.0 * s
+	dot.offset_right = 2.0 * s
+	dot.offset_bottom = 2.0 * s
 	layer.add_child(dot)
 
 	# The DMG LCD interface (capsule MONEY/GLUE readouts + the main menu) on its own layer, above
@@ -842,12 +847,12 @@ func _spawn_crosshair() -> void:
 	hint.anchor_top = 1.0
 	hint.anchor_right = 0.0
 	hint.anchor_bottom = 1.0
-	hint.offset_left = 6.0
-	hint.offset_top = -18.0
+	hint.offset_left = 6.0 * s
+	hint.offset_top = -18.0 * s
 	hint.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	if gb_font != null:
 		hint.add_theme_font_override("font", gb_font)
-		hint.add_theme_font_size_override("font_size", 8)
+		hint.add_theme_font_size_override("font_size", fs)
 	layer.add_child(hint)
 
 	# Context prompt, just under the crosshair — pixel font, bright DMG green so it reads over the
@@ -860,12 +865,12 @@ func _spawn_crosshair() -> void:
 	_prompt_label.anchor_right = 0.5
 	_prompt_label.anchor_top = 0.5
 	_prompt_label.anchor_bottom = 0.5
-	_prompt_label.offset_left = -170.0
-	_prompt_label.offset_right = 170.0
-	_prompt_label.offset_top = 20.0
+	_prompt_label.offset_left = -170.0 * s
+	_prompt_label.offset_right = 170.0 * s
+	_prompt_label.offset_top = 20.0 * s
 	if gb_font != null:
 		_prompt_label.add_theme_font_override("font", gb_font)
-		_prompt_label.add_theme_font_size_override("font_size", 8)
+		_prompt_label.add_theme_font_size_override("font_size", fs)
 	layer.add_child(_prompt_label)
 
 

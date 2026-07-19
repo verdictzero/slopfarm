@@ -24,7 +24,11 @@ const DIM_HI := Color("4d7a1f")      # dim capsule gradient top
 const DIM_MID := Color("306230")     # dim capsule gradient mid
 const DIM_LO := Color("1b4a1b")      # dim capsule gradient low
 
-# --- geometry, in native LCD pixels (the world SubViewport is 360x360) -------
+# --- geometry, in DESIGN pixels (a 360-tall LCD) -----------------------------
+# Everything below is authored against a 360-pixel-tall screen. The world SubViewport now renders
+# at 3x that (1080), so _on_resize draws the whole interface in this design space and scales it up
+# to fill the buffer — the layout is written once and stays sharp at any density.
+const DESIGN := 360.0
 const PAD := 12.0            # inset from the LCD edge (design 20 @ 560, scaled)
 const STRIP_GAP := 7.0       # gap under the HUD strip before the menu body
 const CAP_H := 18.0          # capsule height
@@ -68,7 +72,9 @@ func _ready() -> void:
 	_lcd = Control.new()
 	_lcd.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_lcd.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_lcd.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Top-left anchored (not full-rect): _on_resize drives size and scale by hand so the design-space
+	# drawing scales up to the buffer without the preset's anchors fighting the manual size.
+	_lcd.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
 	_lcd.draw.connect(_draw_lcd)
 	add_child(_lcd)
 
@@ -87,9 +93,16 @@ func _ready() -> void:
 
 
 func _on_resize() -> void:
-	if _lcd != null:
-		_lcd.size = get_viewport().get_visible_rect().size
-		_lcd.queue_redraw()
+	if _lcd == null:
+		return
+	# Draw in the 360-tall design space and scale the whole LCD up to fill the (square) buffer, so
+	# every capsule, panel and glyph stays proportional and crisp instead of shrinking on a bigger
+	# buffer. At the old 360 buffer s is 1 and this is a no-op; at 1080 it is a clean 3x.
+	var vp := get_viewport().get_visible_rect().size
+	var s := maxf(1.0, vp.y / DESIGN)
+	_lcd.scale = Vector2(s, s)
+	_lcd.size = vp / s
+	_lcd.queue_redraw()
 
 
 ## Load the pixel font and pin the crisp render params (the .import already does this; setting them
