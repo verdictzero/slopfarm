@@ -35,6 +35,16 @@ func _ready() -> void:
 	add_child(terrain)
 	terrain.prime(Vector3.ZERO)   # solid ground the instant we start
 
+	# 1b) Scatter trees in clumps across the grassland — streams in tiles with the terrain.
+	var scatter := DmgScatter.new()
+	scatter.clump = true
+	scatter.slope_max_degrees = 24.0
+	scatter.min_height = -2.0
+	scatter.seed = 20
+	scatter.meshes = [_tree_mesh(0.85), _tree_mesh(1.15)]
+	add_child(scatter)
+	scatter.setup(terrain, _anchor)
+
 	# 2) The camera.
 	_cam = Camera3D.new()
 	_cam.far = 4000.0
@@ -59,6 +69,20 @@ func _ready() -> void:
 		{"title": "OPTIONS", "lines": ["SOUND   ON", "SHAKE   OFF"], "desc": "TWEAK THE GAME"},
 		{"title": "QUIT", "lines": ["LEAVE TO DESKTOP"], "desc": "PRESS A TO QUIT"},
 	])
+
+
+## A little pine for the scatter: a bark trunk under stacked needle cones, one merged mesh.
+func _tree_mesh(s: float) -> ArrayMesh:
+	var kit := DmgMeshKit.new()
+	kit.begin()
+	kit.cylinder(Vector3(0, 1.4 * s, 0), 0.28 * s, 2.8 * s, 6, Color(0.34, 0.24, 0.16))
+	var y := 2.2 * s
+	var r := 2.0 * s
+	for k in 4:
+		kit.cone(Vector3(0, y, 0), r, 2.2 * s, 8, Color(0.16, 0.34, 0.18).lightened(0.03 * k))
+		y += 1.3 * s
+		r = maxf(0.4 * s, r * 0.7)
+	return kit.commit()
 
 
 func _process(delta: float) -> void:
