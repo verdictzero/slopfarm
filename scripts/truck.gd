@@ -19,8 +19,12 @@ const DRAG := 7.0
 const STEER_RATE := 1.7
 ## How far out the truck can roam before it stops, so it never drives into the unstreamed void.
 const WORLD_LIMIT := 840.0
-const RIDE_HEIGHT := 0.75
-const WHEEL_RADIUS := 0.62
+## The model's local origin sits at the ground (wheel-contact) plane and wheels mount at
+## +WHEEL_RADIUS, so this is a small ground clearance, NOT a lift — the tyres stay planted rather
+## than floating as they did before.
+const RIDE_HEIGHT := 0.05
+## Tyre outer radius. ~0.9 m diameter — a medium delivery truck, not the old 1.24 m monster wheels.
+const WHEEL_RADIUS := 0.46
 
 const CAB := Color(0.72, 0.18, 0.16)
 const CAB_DK := Color(0.55, 0.13, 0.12)
@@ -174,12 +178,12 @@ func _place_camera(delta: float, snap: bool) -> void:
 	if _camera == null:
 		return
 	var b := global_transform.basis
-	var want := global_position + b.y * 3.4 - b.z * 9.5
+	var want := global_position + b.y * 3.8 - b.z * 9.0
 	if snap or delta <= 0.0:
 		_camera.global_position = want
 	else:
 		_camera.global_position = _camera.global_position.lerp(want, clampf(delta * 6.0, 0.0, 1.0))
-	_camera.look_at(global_position + b.y * 1.6, Vector3.UP)
+	_camera.look_at(global_position + b.y * 1.5, Vector3.UP)
 
 
 func _roll_wheels(delta: float) -> void:
@@ -192,40 +196,57 @@ func _roll_wheels(delta: float) -> void:
 
 # ---- model ------------------------------------------------------------------
 
+## A medium flatbed delivery truck, ~6.0 m long / 1.9 m wide / 2.35 m tall, laid out front (-Z) to
+## back: bumper, grille, short hood, sloped windscreen, cab, then the open bed. Everything sits on
+## a ladder frame that rides on two axles. Built once at construction; the local origin is the
+## ground plane (y = 0 = wheel contact).
 func _build_body() -> void:
 	_kit.begin()
-	# Chassis rails.
-	for sx in [-0.9, 0.9]:
-		_kit.box(Vector3(sx, 0.55, 0.2), Vector3(0.25, 0.3, 6.4), CHASSIS)
-	_kit.box(Vector3(0, 0.5, 0.2), Vector3(2.0, 0.2, 6.2), CHASSIS.darkened(0.1))
-	# Cab (forward, -Z), with a sloped windscreen.
-	_kit.box(Vector3(0, 1.5, -2.2), Vector3(2.3, 1.8, 1.9), CAB)
-	_kit.box(Vector3(0, 2.3, -1.6), Vector3(2.1, 0.9, 0.9), CAB_DK)      # cab roof step
-	_kit.box(Vector3(0, 1.9, -1.15), Vector3(1.9, 0.9, 0.16), GLASS)     # windscreen
+
+	# --- Ladder chassis: two frame rails on the axle line, tied by cross-members. ---
+	for sx in [-0.72, 0.72]:
+		_kit.box(Vector3(sx, 0.66, 0.1), Vector3(0.16, 0.18, 5.7), CHASSIS)
+	for cz in [-1.9, -0.4, 1.1, 2.6]:
+		_kit.box(Vector3(0, 0.64, cz), Vector3(1.5, 0.12, 0.16), CHASSIS.darkened(0.1))
+
+	# --- Cab: cabin, roof, hood ahead of it, and a windscreen that slopes UP-and-BACK from the
+	#     cowl to the roof (the real geometry — the old one faced backwards at the rear of the cab).
+	_kit.box(Vector3(0, 1.48, -1.32), Vector3(1.98, 1.46, 1.3), CAB)               # cabin
+	_kit.box(Vector3(0, 2.2, -1.12), Vector3(1.9, 0.14, 0.98), CAB_DK)             # roof
+	_kit.box(Vector3(0, 1.06, -2.5), Vector3(1.86, 0.66, 1.1), CAB)                # hood
+	_kit.quad(Vector3(-0.86, 1.4, -1.97), Vector3(0.86, 1.4, -1.97),
+			Vector3(0.86, 2.14, -1.62), Vector3(-0.86, 2.14, -1.62), GLASS)        # windscreen
 	for sx in [-1.0, 1.0]:
-		_kit.box(Vector3(sx * 1.16, 1.6, -2.2), Vector3(0.08, 0.9, 1.2), GLASS)  # side windows
-	# Hood + grille + headlights + bumper.
-	_kit.box(Vector3(0, 1.05, -3.1), Vector3(2.2, 0.9, 0.9), CAB)
-	_kit.box(Vector3(0, 1.0, -3.58), Vector3(2.0, 0.7, 0.12), CHROME)    # grille
-	for sx in [-0.7, 0.7]:
-		_kit.box(Vector3(sx, 1.05, -3.6), Vector3(0.4, 0.4, 0.1), LAMP)  # headlight
-	_kit.box(Vector3(0, 0.7, -3.66), Vector3(2.4, 0.35, 0.2), CHROME)    # front bumper
-	# Cargo bed (open box, +Z) with a GLUE placard.
-	_kit.box(Vector3(0, 0.85, 1.6), Vector3(2.4, 0.3, 4.0), BED.darkened(0.1))   # bed floor
-	for sx in [-1.15, 1.15]:
-		_kit.box(Vector3(sx, 1.4, 1.6), Vector3(0.14, 1.1, 4.0), BED)   # bed side
-	_kit.box(Vector3(0, 1.4, 3.55), Vector3(2.4, 1.1, 0.14), BED)       # tailboard
-	_kit.box(Vector3(0, 1.7, -0.35), Vector3(2.4, 1.7, 0.16), BED.darkened(0.15))  # headboard
-	_kit.box(Vector3(0, 1.5, 3.63), Vector3(1.6, 0.7, 0.08), SIGN)      # GLUE placard
-	# A couple of sacks riding in the bed.
-	for sx in [-0.5, 0.6]:
-		_kit.box(Vector3(sx, 1.3, 1.4 + sx), Vector3(0.8, 0.7, 0.7), Color(0.60, 0.50, 0.33))
-	# Fuel tank + exhaust stack + mudflaps.
-	_kit.cylinder(Vector3(-1.15, 0.8, -0.4), 0.35, 1.4, 8, CHROME.darkened(0.1))
-	_kit.pipe(Vector3(1.1, 1.0, -1.6), Vector3(1.1, 3.0, -1.6), 0.12, 6, CHASSIS.lightened(0.2))
-	for sz in [-2.9, 2.9]:
-		for sx in [-1.25, 1.25]:
-			_kit.box(Vector3(sx, 0.5, sz), Vector3(0.1, 0.7, 0.5), CHASSIS)   # mudflap
+		_kit.box(Vector3(sx, 1.72, -1.28), Vector3(0.05, 0.6, 1.0), GLASS)         # side window
+	_kit.box(Vector3(0, 1.8, -0.69), Vector3(1.4, 0.5, 0.06), GLASS)               # rear window
+
+	# --- Front end: grille, headlights, bumper. ---
+	_kit.box(Vector3(0, 1.0, -3.06), Vector3(1.72, 0.72, 0.1), CHROME)             # grille
+	for sx in [-0.62, 0.62]:
+		_kit.box(Vector3(sx, 1.06, -3.09), Vector3(0.32, 0.3, 0.08), LAMP)         # headlight
+	_kit.box(Vector3(0, 0.6, -3.14), Vector3(2.0, 0.26, 0.2), CHROME)              # bumper
+
+	# --- Flatbed: deck, tall headboard behind the cab, low stake sides, tailboard, GLUE placard. ---
+	_kit.box(Vector3(0, 0.82, 1.0), Vector3(2.16, 0.16, 3.8), BED.darkened(0.08))  # deck
+	_kit.box(Vector3(0, 1.4, -0.78), Vector3(2.16, 1.16, 0.12), BED.darkened(0.15))  # headboard
+	for sx in [-1.02, 1.02]:
+		_kit.box(Vector3(sx, 1.16, 1.0), Vector3(0.12, 0.66, 3.8), BED)            # stake side
+	_kit.box(Vector3(0, 1.16, 2.86), Vector3(2.16, 0.66, 0.12), BED)               # tailboard
+	_kit.box(Vector3(0, 1.2, 2.92), Vector3(1.5, 0.5, 0.06), SIGN)                 # GLUE placard
+	for s in [Vector2(-0.5, 0.4), Vector2(0.55, 1.3), Vector2(-0.1, 2.0)]:
+		_kit.box(Vector3(s.x, 1.15, s.y), Vector3(0.68, 0.6, 0.6), Color(0.60, 0.50, 0.33))  # sacks
+
+	# --- Running gear: a horizontal saddle fuel tank on the frame, a slim exhaust stack behind the
+	#     cab, and mudflaps behind the rear wheels. ---
+	_kit.pipe(Vector3(-0.84, 0.52, -0.2), Vector3(-0.84, 0.52, 1.1), 0.22, 10, CHROME.darkened(0.12))
+	_kit.pipe(Vector3(0.86, 0.74, -0.7), Vector3(0.86, 2.05, -0.7), 0.08, 8, CHASSIS.lightened(0.25))
+	for sx in [-0.72, 0.72]:
+		_kit.box(Vector3(sx, 0.44, -3.2), Vector3(0.16, 0.5, 0.16), CHROME.darkened(0.2))  # bumper irons
+	for sx in [-0.98, 0.98]:
+		_kit.box(Vector3(sx, 0.28, 2.35), Vector3(0.1, 0.5, 0.36), CHASSIS)        # rear mudflap
+	for sx in [-0.62, 0.62]:
+		_kit.box(Vector3(sx, 1.1, 2.93), Vector3(0.28, 0.24, 0.06), CAB_DK)        # taillight
+
 	var mesh := _kit.commit()
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
@@ -235,10 +256,10 @@ func _build_body() -> void:
 
 func _build_wheels() -> void:
 	var wheel_mesh := _wheel_mesh()
-	# (local x, z, is_front)
+	# (local x, z, is_front) — front axle under the cab, rear axle under the bed: ~3.75 m wheelbase.
 	var spots := [
-		[-1.15, -2.4, true], [1.15, -2.4, true],
-		[-1.15, 2.2, false], [1.15, 2.2, false],
+		[-0.92, -1.9, true], [0.92, -1.9, true],
+		[-0.92, 1.85, false], [0.92, 1.85, false],
 	]
 	for s in spots:
 		var lx: float = s[0]
@@ -256,15 +277,15 @@ func _build_wheels() -> void:
 			_steer_pivots.append(mount)
 
 
-## A wheel lying on its axle (local X): a black tyre torus, a hub disk and spokes.
+## A wheel on its axle (local X): a black tyre torus whose OUTER edge is exactly WHEEL_RADIUS (so it
+## rolls right and sits on the ground), a steel rim disc across the axle, a hub cap, and lug bars.
 func _wheel_mesh() -> ArrayMesh:
 	_kit.begin()
-	# Torus in XZ plane, then the caller's mount keeps the axle along X — rotate the ring so its
-	# axle is X by building it around the X axis directly.
-	var sides := 12
-	var tube := 10
-	var R := WHEEL_RADIUS
-	var rt := 0.24
+	var sides := 14
+	var tube := 8
+	var rt := 0.14
+	var R := WHEEL_RADIUS - rt            # tube centre, so the tyre's outer edge = WHEEL_RADIUS
+	# Tyre: torus around the X axle (ring in the YZ plane).
 	for i in sides:
 		var a0 := TAU * float(i) / float(sides)
 		var a1 := TAU * float(i + 1) / float(sides)
@@ -280,9 +301,11 @@ func _wheel_mesh() -> ArrayMesh:
 			var p10 := c1 * (R + cos(b0) * rt) + n0
 			var p11 := c1 * (R + cos(b1) * rt) + n1
 			_kit.quad(p00, p10, p11, p01, TIRE.lightened(0.05 * (j % 2)))
-	# Hub + spokes on the outer face.
-	_kit.cylinder(Vector3(0.0, 0, 0), 0.22, 0.5, 8, HUB)
+	# Steel rim across the axle (a shallow disc, X = axle), then a small hub cap.
+	_kit.pipe(Vector3(-0.09, 0, 0), Vector3(0.09, 0, 0), R, 12, HUB.darkened(0.15))
+	_kit.pipe(Vector3(-0.13, 0, 0), Vector3(0.13, 0, 0), 0.09, 8, HUB)
+	# Lug bars across the rim face.
 	for k in 5:
-		var a := TAU * float(k) / 5.0
-		_kit.box(Vector3(0.12, cos(a) * R * 0.5, sin(a) * R * 0.5), Vector3(0.08, R * 0.9, 0.1), HUB.darkened(0.1))
+		var a := TAU * float(k) / 5.0 + 0.3
+		_kit.box(Vector3(0.1, cos(a) * R * 0.55, sin(a) * R * 0.55), Vector3(0.06, R * 0.7, 0.11), HUB.darkened(0.08))
 	return _kit.commit()
