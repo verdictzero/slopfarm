@@ -696,11 +696,20 @@ func _respawn() -> void:
 func _spawn_wand() -> void:
 	if not ResourceLoader.exists(WAND_SCENE):
 		return
-	_wand = (load(WAND_SCENE) as PackedScene).instantiate() as Node3D
-	_force_pixel_look(_wand)
-	_paint_wand(_wand)
+	var model := (load(WAND_SCENE) as PackedScene).instantiate() as Node3D
+	_force_pixel_look(model)
+	_paint_wand(model)
+	# The swing rotates a PIVOT placed at the wand's near (handle) end — the end closest to the
+	# player, opposite the +Y heart — so the wand swings from the hand and the heart tip sweeps the
+	# arc, rather than spinning about the model's own centre. The model hangs off the pivot, dropped
+	# so its base centre sits on the pivot origin.
+	_wand = Node3D.new()
 	camera.add_child(_wand)
-	_fit_height(_wand, WAND_HEIGHT)
+	_wand.add_child(model)
+	_fit_height(model, WAND_HEIGHT)
+	var s := model.scale.x
+	var b := _local_aabb(model)   # unscaled model bounds; scale by s to reach pivot (parent) space
+	model.position = -Vector3(b.get_center().x, b.position.y, b.get_center().z) * s
 	_wand.position = WAND_REST
 	_wand.rotation_degrees = WAND_REST_ROT
 	_spawn_wand_fx()
@@ -729,8 +738,9 @@ func _spawn_wand_fx() -> void:
 	# top_level so the wand's large model scale does NOT multiply the particle size; we drive its
 	# world position to the tip each frame instead (see _process).
 	_hearts.top_level = true
-	_hearts.scale_amount_min = 0.14
-	_hearts.scale_amount_max = 0.24
+	# 75% smaller than they were (0.14/0.24).
+	_hearts.scale_amount_min = 0.035
+	_hearts.scale_amount_max = 0.06
 	var shrink := Curve.new()
 	shrink.add_point(Vector2(0.0, 1.0))
 	shrink.add_point(Vector2(0.7, 0.9))
@@ -759,7 +769,7 @@ func _heart_particle_mesh() -> Mesh:
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.albedo_texture = load("res://sprites/heart_particle.png")
-	m.albedo_color = Color(1.0, 0.32, 0.5)    # the palette snaps this to heart-red/pink
+	m.albedo_color = Color(1.0, 0.32, 0.5, 0.5)   # 50% opaque; the palette snaps the hue to a green
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	quad.material = m
 	return quad

@@ -24,6 +24,10 @@ func _ready() -> void:
 	else:
 		_build_bare(tex)
 		_forward_input = true
+	# Boot title over the whole shell, above the display; it pauses the world until dismissed.
+	# Skipped for the screenshot rigs so they capture the game directly.
+	if not OS.has_environment("SLOPFARM_NOTITLE"):
+		add_child(TitleScreen.new())
 
 
 ## Desktop / web: the game is sized to a whole multiple of the 1080x1080 buffer and centred, so

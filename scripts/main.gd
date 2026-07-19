@@ -136,7 +136,10 @@ func _setup_environment() -> void:
 	sky_material.sky_top_color = Color(0.30, 0.52, 0.86)
 	sky_material.sky_horizon_color = Color(0.72, 0.82, 0.90)
 	sky_material.sky_curve = 0.12
-	sky_material.ground_bottom_color = Color(0.30, 0.33, 0.30)
+	# Lifted from a near-black (0.30) floor: the sky's lower hemisphere is what fills shadow via the
+	# sky ambient, and once the palette snaps everything to greens the old dark floor crushed the
+	# ground into the two blackest shades. A brighter floor keeps ground detail in readable mid-greens.
+	sky_material.ground_bottom_color = Color(0.46, 0.48, 0.44)
 	sky_material.ground_horizon_color = Color(0.72, 0.82, 0.90)
 	sky_material.sun_angle_max = 30.0
 
@@ -144,9 +147,14 @@ func _setup_environment() -> void:
 	sky.sky_material = sky_material
 	env.sky = sky
 
+	# Brighter, flatter light so the world reads well once the dither snaps it to the green ramp:
+	# the palette has plenty of light greens but only a few dark ones, so a scene lit for a normal
+	# display bunched too much of the ground into the darkest shades. More sky ambient lifts the
+	# shadows into mid-greens, and a little extra exposure opens the whole image up.
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 1.0
+	env.ambient_light_energy = 1.7
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_exposure = 1.2
 
 	# The fog has two jobs that pull against each other: hide the streaming edge, but
 	# leave the hills (380-700 out) legible as hazy silhouettes. So it stays thin well
@@ -177,7 +185,7 @@ func _setup_environment() -> void:
 
 func _setup_sun() -> void:
 	sun.rotation_degrees = Vector3(-52.0, -130.0, 0.0)
-	sun.light_energy = 1.1
+	sun.light_energy = 1.25
 	sun.light_color = Color(1.0, 0.97, 0.90)
 	sun.shadow_enabled = true
 	# 2 splits over a short distance is plenty on the Pi: nearby terrain gets crisp
